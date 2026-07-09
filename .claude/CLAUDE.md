@@ -132,6 +132,7 @@ Prioritize readability and auditability - users handle credentials and must be a
 - Tests live in `tests/` (outside the package, not included in PyInstaller builds)
 - Use `unittest` from the standard library - no additional test dependencies
 - Mock time-dependent logic by patching `datetime` in the module under test
+- `_is_user_away()` reads the real machine's idle/lock state, so notification tests would flake depending on whether the test runner is active. `_make_app()` defaults to a present, unlocked user (`is_workstation_locked=False`, `get_idle_seconds=0`); tests for idle, lock, or deferral behavior override these per test
 
 ## Git
 - **NEVER create commits** - only suggest commit messages when asked, the user commits manually

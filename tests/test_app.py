@@ -31,14 +31,23 @@ def _make_app(thresholds: list[float] | None = None) -> UsageMonitorForClaude:
          patch('usage_monitor_for_claude.app.taskbar_uses_light_theme', return_value=False):
         app = UsageMonitorForClaude()
     app.icon = MagicMock()
-    app._thresholds_patch = patch('usage_monitor_for_claude.app.get_alert_thresholds', return_value=thresholds)
-    app._thresholds_patch.start()
+    # Patches active for the app's lifetime, stopped by _cleanup.  The presence
+    # defaults keep _is_user_away() False so notification tests are deterministic
+    # regardless of the real machine's idle/lock state (idle/lock tests override).
+    app._patches = [
+        patch('usage_monitor_for_claude.app.get_alert_thresholds', return_value=thresholds),
+        patch('usage_monitor_for_claude.app.is_workstation_locked', return_value=False),
+        patch('usage_monitor_for_claude.app.get_idle_seconds', return_value=0.0),
+    ]
+    for active_patch in app._patches:
+        active_patch.start()
     return app
 
 
 def _cleanup(app: UsageMonitorForClaude) -> None:
     """Stop patches started by _make_app."""
-    app._thresholds_patch.stop()
+    for active_patch in app._patches:
+        active_patch.stop()
 
 
 # ---------------------------------------------------------------------------
