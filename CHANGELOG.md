@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+[Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.18.1...HEAD)
+
+## [1.18.1] - 2026-07-09
+
 ### Fixed
 
 - Usage again refreshes promptly right after a session limit resets when the detail popup was opened, or you returned from idle, shortly before the reset - such a fetch no longer delays the reset-confirming poll by up to a full update interval, so the tray and popup stop showing the exhausted state late
 
-[Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.18.0...HEAD)
+[Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.18.0...v1.18.1)
 
 ## [1.18.0] - 2026-07-02
 
