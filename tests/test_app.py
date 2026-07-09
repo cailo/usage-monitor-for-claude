@@ -11,7 +11,7 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-from usage_monitor_for_claude.app import POLL_FAST, UsageMonitorForClaude, _align_to_reset
+from usage_monitor_for_claude.app import POLL_FAST, RESET_BUFFER, UsageMonitorForClaude, _align_to_reset
 from usage_monitor_for_claude.cache import UpdateResult
 from usage_monitor_for_claude.claude_cli import RefreshResult
 
@@ -1332,6 +1332,83 @@ class TestAlignToReset(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# _reset_aligned_poll_target
+# ---------------------------------------------------------------------------
+
+class TestResetAlignedPollTarget(unittest.TestCase):
+    """Tests for _reset_aligned_poll_target() clamping."""
+
+    def setUp(self):
+        self.app = _make_app()
+        self.app.cache = MagicMock()
+
+    def tearDown(self):
+        _cleanup(self.app)
+
+    @patch('usage_monitor_for_claude.app.time.time', return_value=1000.0)
+    def test_lands_just_after_reset(self, _mock_time):
+        """Well past the cooldown, the poll lands RESET_BUFFER after the reset."""
+        self.app.cache.last_success_time = 1000.0 - 300  # last fetch 300s ago
+        self.assertEqual(self.app._reset_aligned_poll_target(60.0), 1000.0 + 60.0 + RESET_BUFFER)
+
+    @patch('usage_monitor_for_claude.app.time.time', return_value=1000.0)
+    def test_clamped_to_cooldown(self, _mock_time):
+        """Inside the cooldown window the poll is delayed to last_success + POLL_FAST."""
+        last = 1000.0 - 30  # last fetch 30s ago
+        self.app.cache.last_success_time = last
+        # reset+buffer (1025) is earlier than the cooldown floor (last + POLL_FAST)
+        self.assertEqual(self.app._reset_aligned_poll_target(20.0), last + POLL_FAST)
+
+    @patch('usage_monitor_for_claude.app.time.time', return_value=1000.0)
+    def test_no_last_success_uses_reset_only(self, _mock_time):
+        """Without a prior fetch only reset + buffer applies."""
+        self.app.cache.last_success_time = None
+        self.assertEqual(self.app._reset_aligned_poll_target(60.0), 1000.0 + 60.0 + RESET_BUFFER)
+
+
+# ---------------------------------------------------------------------------
+# _should_refresh_usage (popup open decision)
+# ---------------------------------------------------------------------------
+
+class TestShouldRefreshUsage(unittest.TestCase):
+    """Tests for the popup's background-refresh decision."""
+
+    def setUp(self):
+        self.app = _make_app()
+        self.app.cache = MagicMock()
+
+    def tearDown(self):
+        _cleanup(self.app)
+
+    def test_first_open_always_refreshes(self):
+        """With no data yet, refresh even if a reset is imminent."""
+        self.app.cache.last_success_time = None
+        with patch.object(self.app, '_seconds_until_next_reset', return_value=30.0):
+            self.assertTrue(self.app._should_refresh_usage())
+
+    @patch('usage_monitor_for_claude.app.time.time', return_value=1000.0)
+    def test_fresh_data_not_refreshed(self, _mock_time):
+        """Data younger than the cooldown is not refreshed."""
+        self.app.cache.last_success_time = 1000.0 - (POLL_FAST - 10)
+        with patch.object(self.app, '_seconds_until_next_reset', return_value=None):
+            self.assertFalse(self.app._should_refresh_usage())
+
+    @patch('usage_monitor_for_claude.app.time.time', return_value=1000.0)
+    def test_stale_data_refreshed_without_imminent_reset(self, _mock_time):
+        """Stale data refreshes when no reset is imminent."""
+        self.app.cache.last_success_time = 1000.0 - (POLL_FAST + 10)
+        with patch.object(self.app, '_seconds_until_next_reset', return_value=300.0):
+            self.assertTrue(self.app._should_refresh_usage())
+
+    @patch('usage_monitor_for_claude.app.time.time', return_value=1000.0)
+    def test_stale_data_deferred_when_reset_imminent(self, _mock_time):
+        """Stale data is not refreshed when a reset is within the cooldown."""
+        self.app.cache.last_success_time = 1000.0 - (POLL_FAST + 10)
+        with patch.object(self.app, '_seconds_until_next_reset', return_value=POLL_FAST - 1):
+            self.assertFalse(self.app._should_refresh_usage())
+
+
+# ---------------------------------------------------------------------------
 # Menu actions
 # ---------------------------------------------------------------------------
 
@@ -2103,11 +2180,13 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
             if update_count[0] >= 2:
                 self.app.running = False
 
+        # Reset is far off (not imminent), so the user return polls immediately
+        # rather than realigning to the reset - the path exercised here.
         # _is_user_away: True on first check (enter idle), False after _wait_for_activity (user returned)
         mock_time.side_effect = [
             100.0,    # 1st iter: target = time() + interval
             100.0,    # 1st inner loop: time() < target
-            100.0,    # deadline calc: time() + 30 + 5
+            100.0,    # deadline calc: time() + 300 + 5
             200.0,    # after wait: time() - lst >= interval -> break
             200.0,    # 2nd iter: target = time() + interval
             200.0,    # 2nd inner loop: time() < target -> running=False
@@ -2117,7 +2196,7 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
              patch.object(self.app, '_calculate_poll_interval', return_value=180), \
              patch.object(self.app, '_is_user_away', side_effect=[True, False, False, False]), \
              patch.object(self.app, '_wait_for_activity', side_effect=capture_wait), \
-             patch.object(self.app, '_seconds_until_next_reset', return_value=30.0):
+             patch.object(self.app, '_seconds_until_next_reset', return_value=300.0):
             self.app.poll_loop()
 
         # Flag persists so that if the user locks again before the
@@ -2169,6 +2248,88 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
         self.assertEqual(update_count[0], 3)
         # Second wait used POLL_INTERVAL deadline (not None)
         self.assertAlmostEqual(wait_calls[1], 380.0, places=0)
+
+    @patch('usage_monitor_for_claude.app.ON_RESET_COMMAND', ['echo reset'])
+    @patch('usage_monitor_for_claude.app.time.sleep')
+    @patch('usage_monitor_for_claude.app.time.time', return_value=1000.0)
+    def test_user_return_near_reset_realigns_instead_of_polling(self, mock_time, mock_sleep):
+        """Returning within POLL_FAST of a reset defers the poll to just after the reset."""
+        self.app.cache.last_success_time = 1000.0
+
+        away_sequence = [True, False]
+
+        def is_away():
+            if away_sequence:
+                return away_sequence.pop(0)
+            self.app.running = False
+            return False
+
+        update_count = [0]
+
+        def update_side_effect():
+            update_count[0] += 1
+
+        with patch.object(self.app, 'update', side_effect=update_side_effect), \
+             patch.object(self.app, '_calculate_poll_interval', return_value=180), \
+             patch.object(self.app, '_is_user_away', side_effect=is_away), \
+             patch.object(self.app, '_wait_for_activity'), \
+             patch.object(self.app, '_seconds_until_next_reset', return_value=30.0):
+            self.app.poll_loop()
+
+        # Poll was deferred, not fired immediately: update ran only the first time.
+        self.assertEqual(update_count[0], 1)
+        # Next poll realigned to max(now + 30 + RESET_BUFFER, last_success + POLL_FAST)
+        # = max(1035, 1120) = 1120, i.e. the cooldown floor just past the reset.
+        self.assertEqual(self.app._next_poll_time, 1000.0 + POLL_FAST)
+        self.assertTrue(self.app._idle_reset_pending)
+
+    @patch('usage_monitor_for_claude.app.ON_RESET_COMMAND', [])
+    @patch('usage_monitor_for_claude.app.time.time', return_value=1000.0)
+    def test_midwait_fetch_near_reset_capped_to_reset_slot(self, mock_time):
+        """A concurrent fetch near a reset must not push the poll a full interval past it."""
+        self.app.cache.last_success_time = 900.0
+
+        def advance_success(_seconds):
+            # Simulate a popup fetch completing mid-wait.
+            self.app.cache.last_success_time = 1000.0
+
+        def is_away():
+            self.app.running = False
+            return False
+
+        with patch.object(self.app, 'update'), \
+             patch.object(self.app, '_calculate_poll_interval', return_value=180), \
+             patch.object(self.app, '_is_user_away', side_effect=is_away), \
+             patch.object(self.app, '_seconds_until_next_reset', return_value=30.0), \
+             patch('usage_monitor_for_claude.app.time.sleep', side_effect=advance_success):
+            self.app.poll_loop()
+
+        # Capped to the reset-aligned slot (1000 + POLL_FAST = 1120), not the
+        # uncapped push-forward (last_success + interval = 1180).
+        self.assertEqual(self.app._next_poll_time, 1000.0 + POLL_FAST)
+
+    @patch('usage_monitor_for_claude.app.ON_RESET_COMMAND', [])
+    @patch('usage_monitor_for_claude.app.time.time', return_value=1000.0)
+    def test_midwait_fetch_without_reset_not_capped(self, mock_time):
+        """With no reset nearby, the push-forward is not clamped to a reset slot."""
+        self.app.cache.last_success_time = 900.0
+
+        def advance_success(_seconds):
+            self.app.cache.last_success_time = 1000.0
+
+        def is_away():
+            self.app.running = False
+            return False
+
+        with patch.object(self.app, 'update'), \
+             patch.object(self.app, '_calculate_poll_interval', return_value=180), \
+             patch.object(self.app, '_is_user_away', side_effect=is_away), \
+             patch.object(self.app, '_seconds_until_next_reset', return_value=None), \
+             patch('usage_monitor_for_claude.app.time.sleep', side_effect=advance_success):
+            self.app.poll_loop()
+
+        # No reset: poll stays at last_success + interval (1000 + 180 = 1180).
+        self.assertEqual(self.app._next_poll_time, 1000.0 + 180)
 
 
 class TestIdleResetPendingCleared(unittest.TestCase):

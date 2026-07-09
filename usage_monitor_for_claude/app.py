@@ -238,13 +238,32 @@ class UsageMonitorForClaude:
 
     # Popup
 
+    def _should_refresh_usage(self) -> bool:
+        """Return whether opening the popup should trigger a background usage fetch.
+
+        Refreshes stale data, with one exception: when a quota reset is closer
+        than the cache cooldown, a fetch now would advance
+        ``last_success_time`` into the last ``POLL_FAST`` window before the
+        reset and force the reset-aligned poll to overshoot.  Such a fetch is
+        deferred to the scheduled reset poll, whose fresh data the open popup
+        picks up live.  The very first fetch (no data yet) always refreshes.
+        """
+        last = self.cache.last_success_time
+        if last is None:
+            return True
+        if time.time() - last < POLL_FAST:
+            return False
+
+        next_reset = self._seconds_until_next_reset()
+        return not (next_reset is not None and next_reset < POLL_FAST)
+
     def _open_popup(self) -> None:
         # _popup_open is set True under _popup_lock (in on_show_popup) and
         # reset here without the lock.  This is safe because False is the
         # permissive default - a momentary stale True only delays the next open.
         try:
             needs_profile = not self.cache.profile
-            needs_refresh = self.cache.last_success_time is None or time.time() - self.cache.last_success_time >= POLL_FAST
+            needs_refresh = self._should_refresh_usage()
             if needs_profile or needs_refresh:
                 # Single thread: ensure_profile() and update() both acquire
                 # cache._lock, so they must run sequentially.  Two threads
@@ -608,6 +627,24 @@ class UsageMonitorForClaude:
 
         return earliest
 
+    def _reset_aligned_poll_target(self, next_reset: float) -> float:
+        """Return the absolute time for a poll landing just after a reset.
+
+        Clamped to the cache cooldown (``last_success_time + POLL_FAST``) so
+        the confirming poll never fires before a fresh fetch is permitted.
+
+        Parameters
+        ----------
+        next_reset : float
+            Seconds until the upcoming reset.
+        """
+        target = time.time() + next_reset + RESET_BUFFER
+        last = self.cache.last_success_time
+        if last is not None:
+            target = max(target, last + POLL_FAST)
+
+        return target
+
     def _calculate_poll_interval(self) -> int:
         """Determine the next poll interval based on current state.
 
@@ -673,17 +710,25 @@ class UsageMonitorForClaude:
 
             target = time.time() + interval
             self._next_poll_time = target
+            last_success_seen = self.cache.last_success_time
             while self.running and time.time() < target:
                 time.sleep(1)
-                # If another thread (popup) fetched successfully,
-                # push the next poll forward to avoid a redundant
-                # fetch right after.
+                # If another thread (popup) fetched successfully, push the next
+                # poll a full interval past that fetch to avoid a redundant one.
+                # Only react to an actual new fetch (last_success advanced), not
+                # to a target the idle-return path lowered on its own.
                 lst = self.cache.last_success_time
-                if lst is not None:
+                if lst is not None and (last_success_seen is None or lst > last_success_seen):
+                    last_success_seen = lst
                     new_target = max(target, lst + interval)
-                    if new_target != target:
-                        target = new_target
-                        self._next_poll_time = target
+                    # Never let that push move the poll past a reset-aligned slot,
+                    # so the confirming poll still lands just after the reset
+                    # instead of a full interval later.
+                    next_reset = self._seconds_until_next_reset()
+                    if next_reset is not None and next_reset < interval:
+                        new_target = min(new_target, self._reset_aligned_poll_target(next_reset))
+                    target = new_target
+                    self._next_poll_time = target
 
                 # Pause polling while the user is away.
                 # Regular polling stops entirely during idle/lock.
@@ -720,7 +765,20 @@ class UsageMonitorForClaude:
                     # when a usage drop is actually detected.
                     self._flush_deferred_notifications()
                     lst = self.cache.last_success_time
-                    if lst is not None and time.time() - lst >= interval:
+                    if lst is None:
+                        continue
+
+                    next_reset = self._seconds_until_next_reset()
+                    if next_reset is not None and next_reset < POLL_FAST:
+                        # Returned within the cooldown window before a reset:
+                        # polling now would advance last_success into that window
+                        # and force the confirming poll to overshoot.  Realign the
+                        # wait to just after the reset and keep waiting for it.
+                        target = self._reset_aligned_poll_target(next_reset)
+                        self._next_poll_time = target
+                        continue
+
+                    if time.time() - lst >= interval:
                         break
 
     # Lifecycle

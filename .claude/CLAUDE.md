@@ -24,6 +24,12 @@ Prioritize readability and auditability - users handle credentials and must be a
 - Model-scoped limits (e.g. a weekly Fable limit) arrive only inside the `limits` array via `scope.model`, not as top-level fields - `_merge_scoped_limits()` in `api.py` normalizes each into a synthetic top-level field (e.g. `seven_day_fable`) so all of the above applies unchanged. The period prefix is derived from the same-`group` non-scoped limit's shared `resets_at` (never hardcoded); an existing top-level field is never overwritten, and inactive scoped limits (no `resets_at`) are still surfaced at 0%
 - Locale files use template keys (`session_label`, `weekly_label`, `notify_threshold_generic`) - never add per-field translation keys
 
+## Polling & Reset Alignment
+- `cache.update()` enforces a hard `POLL_FAST` cooldown - no successful fetch happens more often than every `POLL_FAST` seconds. All poll scheduling is built around this floor; `_align_to_reset()` never returns an interval below `POLL_FAST` (enforced by a test invariant)
+- Invariant: no discretionary fetch may land in the "danger window" - the last `POLL_FAST - RESET_BUFFER` seconds before a quota reset. A fetch there consumes the cooldown and forces the reset-confirming poll to overshoot the reset. The reset-aligned cadence poll owns the post-reset confirmation
+- The cadence scheduler (`_align_to_reset`) already never schedules a poll into the danger window. Discretionary fetches must defer to it when a reset is within `POLL_FAST`: the popup skips its background refresh (`_should_refresh_usage()`), and the idle-return path realigns via `_reset_aligned_poll_target()` instead of polling immediately. Cold start (no data yet) is the only allowed exception
+- The poll-loop push-forward (which avoids a redundant fetch right after a popup fetch) reacts only to an actual new fetch (`last_success_time` advanced) and never moves a poll past a reset-aligned slot
+
 ## Security & Transparency
 - All URLs and API endpoints as top-level constants - no dynamic URL construction
 - Network communication exclusively with `api.anthropic.com` - no other destinations
