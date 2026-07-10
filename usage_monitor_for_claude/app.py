@@ -18,7 +18,7 @@ from typing import Any
 
 import pystray  # type: ignore[import-untyped]  # no type stubs available
 
-from .api import api_headers
+from .api import api_headers, read_access_token
 from .autostart import is_autostart_enabled, set_autostart, sync_autostart_path
 from .cache import UsageCache
 from .claude_cli import PROJECT_URL
@@ -322,9 +322,18 @@ class UsageMonitorForClaude:
 
     # Update orchestration
 
-    def update(self) -> None:
-        """Request a data refresh from the cache and process the result."""
-        result = self.cache.update()
+    def update(self, force: bool = False) -> None:
+        """Request a data refresh from the cache and process the result.
+
+        Parameters
+        ----------
+        force : bool
+            When True, bypass the cache cooldown and the 429 rate-limit
+            backoff so the refresh happens immediately.  Used after a
+            confirmed account switch, where the freshly selected account
+            has no polling history that those throttles need to protect.
+        """
+        result = self.cache.update(force=force)
         if result.data is None:
             return
 
@@ -627,6 +636,24 @@ class UsageMonitorForClaude:
 
         return earliest
 
+    def _account_switched(self) -> bool:
+        """Return whether the current credentials belong to a different account.
+
+        Probes the account profile with the token now in the credentials
+        file (bypassing the 429 backoff, since a freshly selected account
+        cannot be the source of that rate limit) and compares its UUID
+        against the last seen one.  Returns False until a baseline UUID is
+        known, so the first successful update is never taken for a switch.
+        """
+        if self._prev_account_uuid is None:
+            return False
+
+        self.cache.ensure_profile(bypass_rate_limit=True)
+        profile = self.cache.profile
+        current_uuid = profile.get('account', {}).get('uuid') if isinstance(profile, dict) else None
+
+        return current_uuid is not None and current_uuid != self._prev_account_uuid
+
     def _reset_aligned_poll_target(self, next_reset: float) -> float:
         """Return the absolute time for a poll landing just after a reset.
 
@@ -704,15 +731,30 @@ class UsageMonitorForClaude:
         has elapsed since the last successful fetch.
         """
         self.cache.ensure_profile()
+        force_next = False
         while self.running:
-            self.update()
+            self.update(force=force_next)
+            force_next = False
             interval = self._calculate_poll_interval()
 
             target = time.time() + interval
             self._next_poll_time = target
             last_success_seen = self.cache.last_success_time
+            token_seen = read_access_token()
             while self.running and time.time() < target:
                 time.sleep(1)
+
+                # Immediate account-switch detection: when the credentials token
+                # changes to one belonging to a different account, refresh now
+                # (forced past the cooldown) instead of waiting for the cadence,
+                # so the tray and popup show the new account's usage right away.
+                current_token = read_access_token()
+                if current_token and current_token != token_seen:
+                    token_seen = current_token
+                    if self._account_switched():
+                        force_next = True
+                        break
+
                 # If another thread (popup) fetched successfully, push the next
                 # poll a full interval past that fetch to avoid a redundant one.
                 # Only react to an actual new fetch (last_success advanced), not

@@ -2051,7 +2051,7 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
         # returns at deadline while still idle, breaks to poll again.
         call_count = [0]
 
-        def update_side_effect():
+        def update_side_effect(force=False):
             call_count[0] += 1
             if call_count[0] >= 2:
                 self.app.running = False
@@ -2139,7 +2139,7 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
 
         update_count = [0]
 
-        def update_side_effect():
+        def update_side_effect(force=False):
             update_count[0] += 1
             if update_count[0] >= 3:
                 self.app.running = False
@@ -2184,7 +2184,7 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
 
         update_count = [0]
 
-        def update_side_effect():
+        def update_side_effect(force=False):
             update_count[0] += 1
             if update_count[0] >= 2:
                 self.app.running = False
@@ -2225,7 +2225,7 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
 
         update_count = [0]
 
-        def update_side_effect():
+        def update_side_effect(force=False):
             update_count[0] += 1
             if update_count[0] >= 3:
                 self.app.running = False
@@ -2275,7 +2275,7 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
 
         update_count = [0]
 
-        def update_side_effect():
+        def update_side_effect(force=False):
             update_count[0] += 1
 
         with patch.object(self.app, 'update', side_effect=update_side_effect), \
@@ -2339,6 +2339,61 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
 
         # No reset: poll stays at last_success + interval (1000 + 180 = 1180).
         self.assertEqual(self.app._next_poll_time, 1000.0 + 180)
+
+
+class TestPollLoopAccountSwitch(unittest.TestCase):
+    """Tests for the poll loop's immediate account-switch detection."""
+
+    def setUp(self):
+        self.app = _make_app()
+        self.app.cache = MagicMock()
+        self.app.cache.last_success_time = 0.0
+
+    def tearDown(self):
+        _cleanup(self.app)
+
+    @patch('usage_monitor_for_claude.app.time.sleep')
+    @patch('usage_monitor_for_claude.app.time.time', return_value=100.0)
+    def test_token_change_to_other_account_forces_update(self, _mock_time, _mock_sleep):
+        """A token change confirmed as a different account triggers a forced update."""
+        force_calls = []
+
+        def update_side_effect(force=False):
+            force_calls.append(force)
+            if len(force_calls) >= 2:
+                self.app.running = False
+
+        with patch.object(self.app, 'update', side_effect=update_side_effect), \
+             patch.object(self.app, '_calculate_poll_interval', return_value=180), \
+             patch.object(self.app, '_account_switched', return_value=True), \
+             patch.object(self.app, '_is_user_away', return_value=False), \
+             patch.object(self.app, '_seconds_until_next_reset', return_value=None), \
+             patch('usage_monitor_for_claude.app.read_access_token', side_effect=['tok-a', 'tok-b', 'tok-b', 'tok-b']):
+            self.app.poll_loop()
+
+        # First poll is the normal cadence, the second is forced by the switch.
+        self.assertEqual(force_calls, [False, True])
+
+    @patch('usage_monitor_for_claude.app.time.time', return_value=100.0)
+    def test_token_refresh_same_account_does_not_force(self, _mock_time):
+        """A token change that is only a refresh of the same account does not force a poll."""
+        force_calls = []
+
+        def sleep_side_effect(_seconds):
+            # End the loop after one inner tick so the test terminates.
+            self.app.running = False
+
+        with patch.object(self.app, 'update', side_effect=lambda force=False: force_calls.append(force)), \
+             patch.object(self.app, '_calculate_poll_interval', return_value=180), \
+             patch.object(self.app, '_account_switched', return_value=False), \
+             patch.object(self.app, '_is_user_away', return_value=False), \
+             patch.object(self.app, '_seconds_until_next_reset', return_value=None), \
+             patch('usage_monitor_for_claude.app.time.sleep', side_effect=sleep_side_effect), \
+             patch('usage_monitor_for_claude.app.read_access_token', side_effect=['tok-a', 'tok-b', 'tok-b']):
+            self.app.poll_loop()
+
+        # Only the initial cadence poll ran; the same-account token change forced nothing.
+        self.assertEqual(force_calls, [False])
 
 
 class TestIdleResetPendingCleared(unittest.TestCase):
@@ -2559,6 +2614,83 @@ class TestAccountSwitchDetection(unittest.TestCase):
             self.app.update()
 
         self.app.icon.notify.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _account_switched (immediate switch detection)
+# ---------------------------------------------------------------------------
+
+class TestAccountSwitchDetection(unittest.TestCase):
+    """Tests for _account_switched() used by the poll loop's token watcher."""
+
+    def setUp(self):
+        self.app = _make_app()
+        self.app.cache = MagicMock()
+
+    def tearDown(self):
+        _cleanup(self.app)
+
+    def test_no_baseline_returns_false(self):
+        """Before the first account UUID is known, no switch is reported."""
+        self.app._prev_account_uuid = None
+        self.app.cache.profile = {'account': {'uuid': 'uuid-new'}}
+
+        self.assertFalse(self.app._account_switched())
+        self.app.cache.ensure_profile.assert_not_called()
+
+    def test_different_uuid_returns_true(self):
+        """A profile UUID differing from the baseline reports a switch."""
+        self.app._prev_account_uuid = 'uuid-old'
+        self.app.cache.profile = {'account': {'uuid': 'uuid-new'}}
+
+        self.assertTrue(self.app._account_switched())
+
+    def test_same_uuid_returns_false(self):
+        """An unchanged profile UUID (mere token refresh) is not a switch."""
+        self.app._prev_account_uuid = 'uuid-same'
+        self.app.cache.profile = {'account': {'uuid': 'uuid-same'}}
+
+        self.assertFalse(self.app._account_switched())
+
+    def test_missing_profile_returns_false(self):
+        """When the profile could not be loaded, no switch is reported."""
+        self.app._prev_account_uuid = 'uuid-old'
+        self.app.cache.profile = None
+
+        self.assertFalse(self.app._account_switched())
+
+    def test_probes_profile_bypassing_backoff(self):
+        """The profile probe bypasses the rate-limit backoff so a switch is caught mid-backoff."""
+        self.app._prev_account_uuid = 'uuid-old'
+        self.app.cache.profile = {'account': {'uuid': 'uuid-new'}}
+
+        self.app._account_switched()
+
+        self.app.cache.ensure_profile.assert_called_once_with(bypass_rate_limit=True)
+
+
+# ---------------------------------------------------------------------------
+# update(force=...)
+# ---------------------------------------------------------------------------
+
+class TestUpdateForce(unittest.TestCase):
+    """Tests that update(force=...) forwards the flag to the cache."""
+
+    def setUp(self):
+        self.app = _make_app()
+        self.app.cache = MagicMock()
+        self.app.cache.update.return_value = UpdateResult(data=None)
+
+    def tearDown(self):
+        _cleanup(self.app)
+
+    def test_force_forwarded_to_cache_update(self):
+        self.app.update(force=True)
+        self.app.cache.update.assert_called_once_with(force=True)
+
+    def test_default_not_forced(self):
+        self.app.update()
+        self.app.cache.update.assert_called_once_with(force=False)
 
 
 # ---------------------------------------------------------------------------

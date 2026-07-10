@@ -37,7 +37,10 @@ def read_access_token() -> str | None:
     try:
         creds = json.loads(CLAUDE_CREDENTIALS.read_text())
         return creds.get('claudeAiOauth', {}).get('accessToken') or None
-    except (json.JSONDecodeError, KeyError):
+    except (OSError, ValueError, KeyError):
+        # OSError also covers a read racing a concurrent write (the file is
+        # rewritten on token rotation/account switch); treat it as "no token
+        # right now" rather than letting it crash a caller.
         return None
 
 

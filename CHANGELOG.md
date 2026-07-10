@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Switching your Claude account now updates the tray icon and popup right away instead of at the next poll (previously up to several minutes, and slower still when the old token had already been rejected and triggered a background `claude update`) - the new account's usage loads as soon as the credentials change
+
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.18.1...HEAD)
 
 ## [1.18.1] - 2026-07-09

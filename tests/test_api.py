@@ -124,6 +124,15 @@ class TestReadAccessToken(unittest.TestCase):
             with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file):
                 self.assertIsNone(read_access_token())
 
+    def test_read_error_returns_none(self):
+        """An OS-level read failure (e.g. a read racing a concurrent write) returns None instead of raising."""
+        with TemporaryDirectory() as tmp:
+            creds_file = Path(tmp) / 'creds.json'
+            creds_file.write_text('{"claudeAiOauth": {"accessToken": "sk-test-123"}}')
+            with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file), \
+                 patch.object(Path, 'read_text', side_effect=PermissionError('locked')):
+                self.assertIsNone(read_access_token())
+
 
 # ---------------------------------------------------------------------------
 # fetch_usage
