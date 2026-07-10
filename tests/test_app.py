@@ -535,6 +535,20 @@ class TestUpdateOrchestration(unittest.TestCase):
 
         self.app.icon.notify.assert_not_called()
 
+    @patch('usage_monitor_for_claude.app.NOTIFY_CLAUDE_UPDATE', False)
+    @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
+    @patch('usage_monitor_for_claude.app.create_icon_image')
+    def test_update_notification_suppressed_when_disabled(self, _icon, _tooltip):
+        """No notification when notify_claude_update is disabled, even after a CLI update."""
+        data = {'five_hour': {'utilization': 10.0}}
+        refresh = RefreshResult(success=True, updated=True, old_version='2.1.38', new_version='2.1.69', error='')
+        self.app.cache = MagicMock()
+        self.app.cache.update.return_value = UpdateResult(data=data, token_refresh=refresh)
+
+        self.app.update()
+
+        self.app.icon.notify.assert_not_called()
+
     @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
     @patch('usage_monitor_for_claude.app.create_status_image')
     def test_error_returns_before_threshold_checks(self, _status, _tooltip):

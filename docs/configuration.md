@@ -38,6 +38,14 @@ Threshold lookup uses a fallback chain: exact match (e.g. `alert_thresholds_seve
 }
 ```
 
+## Update notification
+
+When a background token refresh installs a new Claude CLI version, the app shows a Windows notification reporting the version change. Set this to `false` to suppress that notification.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `notify_claude_update` | `true` | Show a notification when a background token refresh installs a new Claude CLI version |
+
 ## Tooltip fields
 
 The tray tooltip shows a quick usage summary when you hover over the icon. By default, it displays the session (5h) and weekly (7d) quotas. Use `tooltip_fields` to choose which usage fields appear in the tooltip.

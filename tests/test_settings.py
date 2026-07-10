@@ -248,6 +248,10 @@ class TestSettingsOverrides(unittest.TestCase):
             ('alert_thresholds_five_hour', [80]),
         ], absent=['alert_thresholds_seven_day'])
 
+    def test_notify_claude_update_override(self):
+        """notify_claude_update is overridden by settings; absent keeps the default on."""
+        self._assert_overrides({'notify_claude_update': False}, [('notify_claude_update', False)], absent=['alert_time_aware'])
+
     def test_icon_color_override(self):
         """Icon color dicts are merged, JSON arrays become tuples."""
         settings = {'icon_light': {'fg': [0, 255, 0, 255]}}
@@ -576,6 +580,30 @@ class TestSettingsValidation(unittest.TestCase):
         """String 'true' for alert_time_aware is dropped."""
         result, mock = self._run_validate({'alert_time_aware': 'true'})
         self.assertNotIn('alert_time_aware', result)
+        mock.windll.user32.MessageBoxW.assert_called_once()
+
+    def test_notify_claude_update_true_valid(self):
+        """Boolean true for notify_claude_update passes through."""
+        result, mock = self._run_validate({'notify_claude_update': True})
+        self.assertIs(result['notify_claude_update'], True)
+        mock.windll.user32.MessageBoxW.assert_not_called()
+
+    def test_notify_claude_update_false_valid(self):
+        """Boolean false for notify_claude_update passes through."""
+        result, mock = self._run_validate({'notify_claude_update': False})
+        self.assertIs(result['notify_claude_update'], False)
+        mock.windll.user32.MessageBoxW.assert_not_called()
+
+    def test_notify_claude_update_int_dropped(self):
+        """Integer 0 for notify_claude_update is dropped (must be boolean)."""
+        result, mock = self._run_validate({'notify_claude_update': 0})
+        self.assertNotIn('notify_claude_update', result)
+        mock.windll.user32.MessageBoxW.assert_called_once()
+
+    def test_notify_claude_update_string_dropped(self):
+        """String 'false' for notify_claude_update is dropped."""
+        result, mock = self._run_validate({'notify_claude_update': 'false'})
+        self.assertNotIn('notify_claude_update', result)
         mock.windll.user32.MessageBoxW.assert_called_once()
 
     # Command validation (string or array of strings)

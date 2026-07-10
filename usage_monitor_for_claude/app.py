@@ -25,7 +25,7 @@ from .claude_cli import PROJECT_URL
 from .command import run_event_command
 from .idle import get_idle_seconds, is_workstation_locked
 from .settings import (
-    ALERT_TIME_AWARE, ALERT_TIME_AWARE_BELOW, ICON_FIELDS, IDLE_PAUSE,
+    ALERT_TIME_AWARE, ALERT_TIME_AWARE_BELOW, ICON_FIELDS, IDLE_PAUSE, NOTIFY_CLAUDE_UPDATE,
     ON_RESET_COMMAND, ON_STARTUP_COMMAND, ON_THRESHOLD_COMMAND,
     POLL_ERROR, POLL_FAST, POLL_FAST_EXTRA, POLL_INTERVAL, get_alert_thresholds,
 )
@@ -341,7 +341,7 @@ class UsageMonitorForClaude:
         self._render_tray()
 
         # Handle CLI update notification from token refresh
-        if result.token_refresh and result.token_refresh.updated:
+        if NOTIFY_CLAUDE_UPDATE and result.token_refresh and result.token_refresh.updated:
             self.icon.notify(
                 T['notify_update'].format(old=result.token_refresh.old_version, new=result.token_refresh.new_version),
                 T['notify_update_title'],
