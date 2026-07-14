@@ -744,15 +744,19 @@ class UsageMonitorForClaude:
             while self.running and time.time() < target:
                 time.sleep(1)
 
-                # Immediate account-switch detection: when the credentials token
-                # changes to one belonging to a different account, refresh now
-                # (forced past the cooldown) instead of waiting for the cadence,
-                # so the tray and popup show the new account's usage right away.
+                # React to a credentials token change between polls. A switch to
+                # a different account forces an immediate refresh (bypassing the
+                # cooldown) so the new account's usage shows right away. A token
+                # change while the last fetch failed auth is retried at once so a
+                # freshly refreshed token recovers usage and profile without
+                # waiting out the error cadence or needing a restart.
                 current_token = read_access_token()
                 if current_token and current_token != token_seen:
                     token_seen = current_token
                     if self._account_switched():
                         force_next = True
+                        break
+                    if self._last_response.get('auth_error'):
                         break
 
                 # If another thread (popup) fetched successfully, push the next

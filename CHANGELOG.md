@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Switching your Claude account now updates the tray icon and popup right away instead of at the next poll (previously up to several minutes, and slower still when the old token had already been rejected and triggered a background `claude update`) - the new account's usage loads as soon as the credentials change
+- After your access token expires and gets refreshed, the app now recovers usage and account info as soon as the new token appears, instead of waiting for the next poll or needing a restart
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.18.1...HEAD)
 

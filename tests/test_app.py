@@ -2356,7 +2356,7 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
 
 
 class TestPollLoopAccountSwitch(unittest.TestCase):
-    """Tests for the poll loop's immediate account-switch detection."""
+    """Tests for the poll loop's reaction to a credentials token change."""
 
     def setUp(self):
         self.app = _make_app()
@@ -2408,6 +2408,29 @@ class TestPollLoopAccountSwitch(unittest.TestCase):
 
         # Only the initial cadence poll ran; the same-account token change forced nothing.
         self.assertEqual(force_calls, [False])
+
+    @patch('usage_monitor_for_claude.app.time.sleep')
+    @patch('usage_monitor_for_claude.app.time.time', return_value=100.0)
+    def test_token_change_retries_after_auth_error(self, _mock_time, _mock_sleep):
+        """A token change while the last fetch failed auth triggers an immediate retry."""
+        self.app._last_response = {'error': 'expired', 'auth_error': True}
+        force_calls = []
+
+        def update_side_effect(force=False):
+            force_calls.append(force)
+            if len(force_calls) >= 2:
+                self.app.running = False
+
+        with patch.object(self.app, 'update', side_effect=update_side_effect), \
+             patch.object(self.app, '_calculate_poll_interval', return_value=30), \
+             patch.object(self.app, '_account_switched', return_value=False), \
+             patch.object(self.app, '_is_user_away', return_value=False), \
+             patch.object(self.app, '_seconds_until_next_reset', return_value=None), \
+             patch('usage_monitor_for_claude.app.read_access_token', side_effect=['tok-a', 'tok-b', 'tok-b', 'tok-b']):
+            self.app.poll_loop()
+
+        # Initial error poll, then an immediate (non-forced) retry on the new token.
+        self.assertEqual(force_calls, [False, False])
 
 
 class TestIdleResetPendingCleared(unittest.TestCase):
