@@ -11,7 +11,9 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-from usage_monitor_for_claude.app import POLL_FAST, RESET_BUFFER, UsageMonitorForClaude, _align_to_reset
+from usage_monitor_for_claude.app import (
+    POLL_FAST, RESET_BUFFER, WM_LBUTTONDBLCLK, WM_LBUTTONUP, UsageMonitorForClaude, _align_to_reset,
+)
 from usage_monitor_for_claude.cache import UpdateResult
 from usage_monitor_for_claude.claude_cli import RefreshResult
 
@@ -2894,6 +2896,209 @@ class TestStartupCommand(unittest.TestCase):
         self.assertEqual(env['USAGE_MONITOR_RESETS_AT_FIVE_HOUR'], '')
         self.assertEqual(env['USAGE_MONITOR_UTILIZATION_FIVE_HOUR'], '0')
         self.assertNotEqual(env['USAGE_MONITOR_RESETS_AT_SEVEN_DAY'], '')
+
+
+# ---------------------------------------------------------------------------
+# Double-click command
+# ---------------------------------------------------------------------------
+
+class TestDoubleClickCommand(unittest.TestCase):
+    """Tests for on_double_click_command execution and its env snapshot."""
+
+    def setUp(self):
+        self.app = _make_app()
+
+    def tearDown(self):
+        _cleanup(self.app)
+
+    @patch('usage_monitor_for_claude.app.ON_DOUBLE_CLICK_COMMAND', ['run.exe'])
+    @patch('usage_monitor_for_claude.app.run_event_command')
+    def test_fires_with_current_quota_snapshot(self, mock_cmd):
+        """Double-click command fires with env vars from the latest response."""
+        self.app._last_response = {
+            'five_hour': {'utilization': 30.0, 'resets_at': '2025-01-15T18:00:00Z'},
+            'seven_day': {'utilization': 55.0, 'resets_at': '2025-01-20T12:00:00Z'},
+        }
+
+        self.app._run_double_click_command()
+
+        mock_cmd.assert_called_once()
+        cmd, env = mock_cmd.call_args[0]
+        self.assertEqual(cmd, ['run.exe'])
+        self.assertEqual(env['USAGE_MONITOR_EVENT'], 'double_click')
+        self.assertEqual(env['USAGE_MONITOR_UTILIZATION_FIVE_HOUR'], '30')
+        self.assertEqual(env['USAGE_MONITOR_RESETS_AT_FIVE_HOUR'], '2025-01-15T18:00:00Z')
+        self.assertEqual(env['USAGE_MONITOR_UTILIZATION_SEVEN_DAY'], '55')
+
+    @patch('usage_monitor_for_claude.app.ON_DOUBLE_CLICK_COMMAND', [])
+    @patch('usage_monitor_for_claude.app.run_event_command')
+    def test_no_fire_when_command_unset(self, mock_cmd):
+        """No command runs when ON_DOUBLE_CLICK_COMMAND is empty."""
+        self.app._last_response = {'five_hour': {'utilization': 30.0}}
+
+        self.app._run_double_click_command()
+
+        mock_cmd.assert_not_called()
+
+    @patch('usage_monitor_for_claude.app.ON_DOUBLE_CLICK_COMMAND', ['run.exe'])
+    @patch('usage_monitor_for_claude.app.run_event_command')
+    def test_empty_response_emits_only_event(self, mock_cmd):
+        """Double-clicking before any data yields only the event var."""
+        self.app._last_response = {}
+
+        self.app._run_double_click_command()
+
+        env = mock_cmd.call_args[0][1]
+        self.assertEqual(env['USAGE_MONITOR_EVENT'], 'double_click')
+        self.assertNotIn('USAGE_MONITOR_UTILIZATION_FIVE_HOUR', env)
+
+    @patch('usage_monitor_for_claude.app.ON_DOUBLE_CLICK_COMMAND', ['run.exe'])
+    @patch('usage_monitor_for_claude.app.run_event_command')
+    def test_error_response_emits_only_event(self, mock_cmd):
+        """An error response contributes no quota vars."""
+        self.app._last_response = {'error': 'server down', 'auth_error': True}
+
+        self.app._run_double_click_command()
+
+        env = mock_cmd.call_args[0][1]
+        self.assertEqual(env['USAGE_MONITOR_EVENT'], 'double_click')
+        self.assertFalse([k for k in env if k.startswith('USAGE_MONITOR_UTILIZATION')])
+
+    @patch('usage_monitor_for_claude.app.ON_DOUBLE_CLICK_COMMAND', ['run.exe'])
+    @patch('usage_monitor_for_claude.app.run_event_command')
+    def test_extra_usage_env_vars_when_enabled(self, mock_cmd):
+        """Extra usage credit vars are included when enabled."""
+        self.app._last_response = {
+            'five_hour': {'utilization': 10.0},
+            'extra_usage': {'is_enabled': True, 'used_credits': 8.20, 'monthly_limit': 10.0},
+        }
+
+        self.app._run_double_click_command()
+
+        env = mock_cmd.call_args[0][1]
+        self.assertIn('USAGE_MONITOR_EXTRA_USED', env)
+        self.assertIn('USAGE_MONITOR_EXTRA_LIMIT', env)
+        self.assertNotIn('USAGE_MONITOR_UTILIZATION_EXTRA_USAGE', env)
+
+    @patch('usage_monitor_for_claude.app.ON_DOUBLE_CLICK_COMMAND', ['run.exe'])
+    @patch('usage_monitor_for_claude.app.run_event_command')
+    def test_test_menu_handler_passes_expected_env(self, mock_cmd):
+        """on_test_double_click passes the documented sample env vars."""
+        self.app.on_test_double_click()
+
+        mock_cmd.assert_called_once()
+        cmd, env = mock_cmd.call_args[0]
+        self.assertEqual(cmd, ['run.exe'])
+        self.assertEqual(env['USAGE_MONITOR_EVENT'], 'double_click')
+        self.assertEqual(env['USAGE_MONITOR_UTILIZATION_FIVE_HOUR'], '30')
+        self.assertEqual(env['USAGE_MONITOR_UTILIZATION_SEVEN_DAY'], '55')
+        self.assertNotEqual(env['USAGE_MONITOR_RESETS_AT_FIVE_HOUR'], '')
+
+
+# ---------------------------------------------------------------------------
+# Double-click detection (_on_tray_message)
+# ---------------------------------------------------------------------------
+
+class TestDoubleClickDetection(unittest.TestCase):
+    """Tests for _on_tray_message single/double-click dispatch."""
+
+    def setUp(self):
+        self.app = _make_app()
+        self.app._double_click_seconds = 0.5
+        self.app._pystray_on_notify = MagicMock()
+
+    def tearDown(self):
+        if self.app._single_click_timer is not None:
+            self.app._single_click_timer.cancel()
+        _cleanup(self.app)
+
+    @patch('usage_monitor_for_claude.app.threading.Timer')
+    def test_single_release_schedules_deferred_popup(self, mock_timer):
+        """A left-button release schedules the popup after the double-click interval."""
+        self.app._on_tray_message(0, WM_LBUTTONUP)
+
+        mock_timer.assert_called_once_with(0.5, self.app._fire_single_click)
+        mock_timer.return_value.start.assert_called_once()
+
+    @patch('usage_monitor_for_claude.app.threading.Timer')
+    def test_double_click_cancels_popup_and_runs_command(self, mock_timer):
+        """A double-click cancels the pending popup and runs the command."""
+        with patch.object(self.app, '_run_double_click_command') as mock_cmd:
+            self.app._on_tray_message(0, WM_LBUTTONUP)
+            self.app._on_tray_message(0, WM_LBUTTONDBLCLK)
+
+        mock_timer.return_value.cancel.assert_called_once()
+        mock_cmd.assert_called_once()
+
+    @patch('usage_monitor_for_claude.app.threading.Timer')
+    def test_trailing_release_after_double_click_swallowed(self, mock_timer):
+        """The release that follows a double-click does not schedule a second popup."""
+        with patch.object(self.app, '_run_double_click_command'):
+            self.app._on_tray_message(0, WM_LBUTTONUP)      # first click's release
+            self.app._on_tray_message(0, WM_LBUTTONDBLCLK)  # second click
+            self.app._on_tray_message(0, WM_LBUTTONUP)      # trailing release
+
+        self.assertEqual(mock_timer.call_count, 1)
+
+    @patch('usage_monitor_for_claude.app.threading.Timer')
+    def test_single_click_after_double_click_schedules_again(self, mock_timer):
+        """A genuine single click after a completed double-click still schedules the popup."""
+        with patch.object(self.app, '_run_double_click_command'):
+            self.app._on_tray_message(0, WM_LBUTTONUP)
+            self.app._on_tray_message(0, WM_LBUTTONDBLCLK)
+            self.app._on_tray_message(0, WM_LBUTTONUP)      # swallowed trailing release
+            self.app._on_tray_message(0, WM_LBUTTONUP)      # new single click
+
+        self.assertEqual(mock_timer.call_count, 2)
+
+    def test_other_message_falls_through_to_pystray(self):
+        """Non-left-button messages delegate to pystray's original handler."""
+        wm_rbuttonup = 0x0205
+        self.app._on_tray_message(7, wm_rbuttonup)
+
+        self.app._pystray_on_notify.assert_called_once_with(7, wm_rbuttonup)
+
+    def test_fire_single_click_opens_popup(self):
+        """The deferred callback opens the popup and clears the timer reference."""
+        self.app._single_click_timer = MagicMock()
+        with patch.object(self.app, 'on_show_popup') as mock_popup:
+            self.app._fire_single_click()
+
+        mock_popup.assert_called_once()
+        self.assertIsNone(self.app._single_click_timer)
+
+    def test_fire_single_click_noop_after_cancel(self):
+        """A fired-but-cancelled timer callback does not open the popup."""
+        self.app._single_click_timer = None  # a double-click cancelled it just as it fired
+        with patch.object(self.app, 'on_show_popup') as mock_popup:
+            self.app._fire_single_click()
+
+        mock_popup.assert_not_called()
+
+
+class TestInstallDoubleClickHandler(unittest.TestCase):
+    """Tests for _install_double_click_handler swapping pystray's message handler."""
+
+    def setUp(self):
+        self.app = _make_app()
+
+    def tearDown(self):
+        _cleanup(self.app)
+
+    def test_replaces_notify_handler_only(self):
+        """The WM_NOTIFY entry is replaced with _on_tray_message; other entries stay."""
+        original_notify = MagicMock(name='on_notify')
+        other_handler = MagicMock(name='other')
+        fake_icon = MagicMock()
+        fake_icon._on_notify = original_notify
+        fake_icon._message_handlers = {0x40B: original_notify, 0x0002: other_handler}
+        self.app.icon = fake_icon
+
+        self.app._install_double_click_handler()
+
+        self.assertEqual(fake_icon._message_handlers[0x40B], self.app._on_tray_message)
+        self.assertIs(fake_icon._message_handlers[0x0002], other_handler)
+        self.assertIs(self.app._pystray_on_notify, original_notify)
 
 
 if __name__ == '__main__':

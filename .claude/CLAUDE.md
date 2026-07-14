@@ -16,6 +16,12 @@ Prioritize readability and auditability - users handle credentials and must be a
 - The pinned-popup drag (`_begin_drag`/`_drag`/`_end_drag`) deliberately uses raw `SetWindowPos` with **physical** cursor coordinates (`GetCursorPos` minus the grab offset captured on mouse-down), not pywebview's `move()`. Reason: `move()` and JS `screenX` deltas are scaled by a single monitor's DPI, which jumps at a monitor boundary and makes the cursor drift off the window and the size break. After a drag that crosses a DPI boundary, `_end_drag` re-asserts the size once via `resize()` against the destination monitor's DPI. Do not collapse this back to `move()` - it reintroduces the mixed-DPI drift
 - The taskbar icon is hidden via Win32 extended styles (`WS_EX_TOOLWINDOW` + remove `WS_EX_APPWINDOW`). Do **not** use WinForms `ShowInTaskbar = False` - it recreates the native window handle, which crashes WebView2 from background threads
 
+## Tray Icon Interaction
+- pystray has no native double-click support (it fires the default menu item on every `WM_LBUTTONUP`). Double-click is added only when `on_double_click_command` is set: `_install_double_click_handler()` swaps the `WM_NOTIFY` entry in pystray's private `_message_handlers` table (matched by identity against `icon._on_notify`) for `_on_tray_message`. This reaches into pystray internals - if a pystray upgrade renames `_message_handlers`/`_on_notify`, this is where it breaks
+- With a command configured, the single click (popup) is deferred by `GetDoubleClickTime()` via a `threading.Timer` and cancelled when the second click arrives; the trailing `WM_LBUTTONUP` that always follows a `WM_LBUTTONDBLCLK` is swallowed via `_swallow_next_up`. All tray-message state is guarded by `_click_lock`, and `_fire_single_click()` re-checks the timer under the lock so a double-click landing exactly as the timer fires still suppresses the popup
+- When no `on_double_click_command` is set, the handler is **not** installed - pystray's instant single-click popup must stay untouched (no double-click delay). Do not make the deferral unconditional
+- `WM_NOTIFY` and other message handlers (right-click menu) must still fall through to the saved `_pystray_on_notify`
+
 ## Quota Fields
 - Never hardcode API quota field names (e.g. `five_hour`, `seven_day_sonnet`) in display logic, alert handling, or reset detection - new fields must be auto-detected from the API response structure
 - A quota field is any dict entry with `utilization` and `resets_at` keys; `extra_usage` has a separate structure and is handled independently

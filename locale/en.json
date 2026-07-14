@@ -18,6 +18,7 @@
     "test_threshold_5h": "Threshold (5-hour)",
     "test_threshold_7d": "Threshold (7-day)",
     "test_startup": "Startup",
+    "test_double_click": "Double-click",
     "resets_in": "Resets in {duration} ({clock})",
     "resets_tomorrow": "Resets tomorrow, {clock}",
     "resets_weekday": "Resets on {day}, {clock}",

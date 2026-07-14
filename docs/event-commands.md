@@ -1,6 +1,6 @@
 # Event Commands
 
-Run a custom shell command when a quota resets or a usage threshold is crossed. Commands run asynchronously and do not block the app. Event details are passed as environment variables so your command or script can use them directly.
+Run a custom shell command when a quota resets, a usage threshold is crossed, the app starts, or you double-click the tray icon. Commands run asynchronously and do not block the app. Event details are passed as environment variables so your command or script can use them directly.
 
 ## Settings
 
@@ -11,12 +11,15 @@ Add these keys to your [`usage-monitor-settings.json`](configuration.md). After 
 | `on_reset_command` | *(none)* | Shell command (or array of commands) to run when a quota resets (usage drops) |
 | `on_startup_command` | *(none)* | Shell command (or array of commands) to run once after the first successful API update following app start |
 | `on_threshold_command` | *(none)* | Shell command (or array of commands) to run when usage crosses a configured alert threshold |
+| `on_double_click_command` | *(none)* | Shell command (or array of commands) to run when you double-click the tray icon |
 
 Commands run with the same privileges as the app and **without a visible window** - no console pops up and no focus is stolen. This is ideal for background tasks like sending notifications, playing sounds, or running headless commands (e.g. `claude -p "..."`). Relative paths in commands are resolved relative to the executable's folder (or the project root when running from source).
 
-Both settings accept a single command string or an array of strings to run multiple commands per event. When an array is provided, all commands are launched independently (fire-and-forget) - if one fails, the others still run.
+Each of these settings accepts a single command string or an array of strings to run multiple commands per event. When an array is provided, all commands are launched independently (fire-and-forget) - if one fails, the others still run.
 
 Commands only fire on **state changes** detected while the app is running. On app startup, already-exceeded thresholds trigger a desktop notification but do not run `on_threshold_command` - this prevents duplicate commands after a restart or reboot.
+
+`on_double_click_command` is the exception: it reacts to a user action, not a usage event. A single click still opens the detail popup as usual - the command only runs on a double-click. When this command is configured, opening the popup is deferred by the system double-click interval (typically about half a second) so a second click can be recognized in time; without the command set, the popup opens instantly as before.
 
 When `on_reset_command` is configured, the app briefly wakes from idle/lock pause to poll at the expected reset time so the command fires promptly - even if the computer is unattended. If the API has not applied the reset yet (server-side delay) or the network is temporarily unavailable, the app retries at regular intervals until the reset is confirmed. `on_threshold_command` does not wake from idle - thresholds are driven by active usage, so they are checked when polling resumes after the user returns. Desktop notifications that occur during idle are deferred and shown when the user returns.
 
@@ -30,6 +33,29 @@ When `on_reset_command` is configured, the app briefly wakes from idle/lock paus
 > Use the **Test event commands** submenu in the tray context menu to fire your configured commands with sample data. This lets you verify your command and script setup without waiting for a real event.
 
 ## Examples
+
+### Launch Agent Monitor for Claude on double-click
+
+Usage Monitor for Claude tells you *how much* of your rate limits you have left. Its companion tool, [**Agent Monitor for Claude**](https://github.com/jens-duttke/agent-monitor-for-claude), tells you *what your agents are actually doing* - a live overview of every running Claude Code agent across all your projects: which ones are working, waiting for your input, blocked, finished, or errored, refreshed every few seconds. Agents are grouped by project with the ones that need attention floated to the top, each with its estimated cost, token breakdown, model, and host - and one click brings any agent's window to the foreground. If you run more than one agent at a time, it turns "which window was that again?" into a glance at the tray.
+
+It is a single portable Windows EXE with zero configuration - it auto-detects your Claude config directory just like this app does. That makes it a natural double-click target, so the icon you already watch for your limits becomes the shortcut to your agents.
+
+**Setup:**
+
+1. Download `AgentMonitorForClaude.exe` from the [latest release](https://github.com/jens-duttke/agent-monitor-for-claude/releases/latest).
+2. Place it in the **same folder** as `UsageMonitorForClaude.exe`. Relative paths in event commands resolve against that folder, so no full path is needed.
+3. Add the setting and restart Usage Monitor for Claude via the tray context menu:
+
+```json
+{
+  "on_double_click_command": "AgentMonitorForClaude.exe"
+}
+```
+
+Now a single click still opens the usage popup, and a double-click opens Agent Monitor for Claude.
+
+> [!TIP]
+> If you keep the EXE somewhere else, use its full path instead, e.g. `"on_double_click_command": "C:\\Tools\\AgentMonitorForClaude.exe"`.
 
 ### Resume a Claude Code session when the quota resets
 
@@ -217,3 +243,19 @@ Fires once after the first successful API update following app start (also after
 | `USAGE_MONITOR_EXTRA_LIMIT` | `$10.00` | Monthly limit (only set when extra usage is enabled) |
 
 Per-quota variables are emitted for every quota field the API returns - additional variants like `USAGE_MONITOR_UTILIZATION_SEVEN_DAY_SONNET` follow the same pattern. An empty `USAGE_MONITOR_RESETS_AT_*` indicates that the quota has no active window (either never used, or the previous window has expired).
+
+### `on_double_click_command`
+
+Fires when you double-click the tray icon. Receives the same full quota state as `on_startup_command` (from the most recent successful update), so the command can act on current usage if it wants to. Most double-click commands simply launch another program and ignore these values.
+
+| Variable | Example | Description |
+|---|---|---|
+| `USAGE_MONITOR_EVENT` | `double_click` | Event type |
+| `USAGE_MONITOR_UTILIZATION_FIVE_HOUR` | `0` | Current session (5h) usage (integer) |
+| `USAGE_MONITOR_RESETS_AT_FIVE_HOUR` | `2025-01-15T18:00:00Z` | When the 5h session resets, or empty if no session is active |
+| `USAGE_MONITOR_UTILIZATION_SEVEN_DAY` | `42` | Current weekly (7d) usage (integer) |
+| `USAGE_MONITOR_RESETS_AT_SEVEN_DAY` | `2025-01-20T12:00:00Z` | When the 7d window resets, or empty if no window is active |
+| `USAGE_MONITOR_EXTRA_USED` | `$8.20` | Amount spent (only set when extra usage is enabled) |
+| `USAGE_MONITOR_EXTRA_LIMIT` | `$10.00` | Monthly limit (only set when extra usage is enabled) |
+
+Per-quota variables are emitted for every quota field the API returns, following the same pattern as `on_startup_command`. If you double-click before the first successful update, only `USAGE_MONITOR_EVENT` is set.

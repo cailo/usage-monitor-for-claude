@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- New `on_double_click_command` event - run a custom command when you double-click the tray icon, while a single click still opens the usage popup. Handy for launching a companion tool like [Agent Monitor for Claude](https://github.com/jens-duttke/agent-monitor-for-claude) straight from the tray
 - [Turn off the Claude update notification](https://github.com/jens-duttke/usage-monitor-for-claude/issues/64) - set the new `notify_claude_update` setting to `false` to stop the notification shown when a background token refresh installs a new Claude CLI version
 
 ### Changed

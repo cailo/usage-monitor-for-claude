@@ -18,6 +18,7 @@
     "test_threshold_5h": "Поріг (5-годин)",
     "test_threshold_7d": "Поріг (7-днів)",
     "test_startup": "Запуск",
+    "test_double_click": "Подвійний клік",
     "resets_in": "Скидання через {duration} ({clock})",
     "resets_tomorrow": "Скидання завтра, {clock}",
     "resets_weekday": "Скидання в {day}, {clock}",

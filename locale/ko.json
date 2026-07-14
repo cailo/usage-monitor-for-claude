@@ -18,6 +18,7 @@
     "test_threshold_5h": "임계값 (5시간)",
     "test_threshold_7d": "임계값 (7일)",
     "test_startup": "시작",
+    "test_double_click": "더블 클릭",
     "resets_in": "{duration} 후 재설정 ({clock})",
     "resets_tomorrow": "내일 재설정, {clock}",
     "resets_weekday": "{day}에 재설정, {clock}",

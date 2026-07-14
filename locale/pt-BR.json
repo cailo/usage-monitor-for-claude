@@ -18,6 +18,7 @@
     "test_threshold_5h": "Limite (5 horas)",
     "test_threshold_7d": "Limite (7 dias)",
     "test_startup": "Inicialização",
+    "test_double_click": "Duplo clique",
     "resets_in": "Reinicia em {duration} ({clock})",
     "resets_tomorrow": "Reinicia amanhã, {clock}",
     "resets_weekday": "Reinicia {day}, {clock}",

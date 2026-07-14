@@ -18,6 +18,7 @@
     "test_threshold_5h": "Ambang batas (5-jam)",
     "test_threshold_7d": "Ambang batas (7-hari)",
     "test_startup": "Mulai",
+    "test_double_click": "Klik ganda",
     "resets_in": "Reset dalam {duration} ({clock})",
     "resets_tomorrow": "Reset besok, {clock}",
     "resets_weekday": "Reset {day}, {clock}",

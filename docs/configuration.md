@@ -167,6 +167,7 @@ Run a shell command when a usage event occurs. See [Event Commands](event-comman
 | `on_reset_command` | *(none)* | Shell command (or array of commands) to run when a quota resets (usage drops) |
 | `on_startup_command` | *(none)* | Shell command (or array of commands) to run once after the first successful API update following app start |
 | `on_threshold_command` | *(none)* | Shell command (or array of commands) to run when usage crosses a configured alert threshold |
+| `on_double_click_command` | *(none)* | Shell command (or array of commands) to run when you double-click the tray icon (e.g. launch [Agent Monitor for Claude](https://github.com/jens-duttke/agent-monitor-for-claude)); a single click still opens the popup |
 
 ## Polling intervals
 

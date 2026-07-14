@@ -18,6 +18,7 @@
     "test_threshold_5h": "सीमा (5-घंटा)",
     "test_threshold_7d": "सीमा (7-दिन)",
     "test_startup": "स्टार्टअप",
+    "test_double_click": "डबल-क्लिक",
     "resets_in": "{duration} में रीसेट ({clock})",
     "resets_tomorrow": "कल रीसेट, {clock}",
     "resets_weekday": "{day} को रीसेट, {clock}",

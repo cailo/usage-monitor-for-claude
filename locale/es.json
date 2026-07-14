@@ -18,6 +18,7 @@
     "test_threshold_5h": "Umbral (5 horas)",
     "test_threshold_7d": "Umbral (7 dias)",
     "test_startup": "Inicio",
+    "test_double_click": "Doble clic",
     "resets_in": "Se restablece en {duration} ({clock})",
     "resets_tomorrow": "Se restablece mañana, {clock}",
     "resets_weekday": "Se restablece el {day}, {clock}",

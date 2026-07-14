@@ -18,6 +18,7 @@
     "test_threshold_5h": "Seuil (5 heures)",
     "test_threshold_7d": "Seuil (7 jours)",
     "test_startup": "Démarrage",
+    "test_double_click": "Double-clic",
     "resets_in": "Réinitialisation dans {duration} ({clock})",
     "resets_tomorrow": "Réinitialisation demain, {clock}",
     "resets_weekday": "Réinitialisation {day}, {clock}",

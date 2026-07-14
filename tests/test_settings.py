@@ -656,6 +656,24 @@ class TestSettingsValidation(unittest.TestCase):
         self.assertNotIn('on_threshold_command', result)
         mock.windll.user32.MessageBoxW.assert_called_once()
 
+    def test_on_double_click_command_string_normalized_to_list(self):
+        """String value for on_double_click_command is normalized to a single-element list."""
+        result, mock = self._run_validate({'on_double_click_command': 'AgentMonitorForClaude.exe'})
+        self.assertEqual(result['on_double_click_command'], ['AgentMonitorForClaude.exe'])
+        mock.windll.user32.MessageBoxW.assert_not_called()
+
+    def test_on_double_click_command_list_valid(self):
+        """Array of strings for on_double_click_command passes through."""
+        result, mock = self._run_validate({'on_double_click_command': ['a.exe', 'b.exe']})
+        self.assertEqual(result['on_double_click_command'], ['a.exe', 'b.exe'])
+        mock.windll.user32.MessageBoxW.assert_not_called()
+
+    def test_on_double_click_command_non_string_dropped(self):
+        """Non-string/non-array value for on_double_click_command is dropped."""
+        result, mock = self._run_validate({'on_double_click_command': 42})
+        self.assertNotIn('on_double_click_command', result)
+        mock.windll.user32.MessageBoxW.assert_called_once()
+
     def _run_validate(self, data: dict) -> tuple[dict, MagicMock]:
         """Run _validate with mocked ctypes and return (result, mock_ctypes)."""
         mock_ctypes = MagicMock()

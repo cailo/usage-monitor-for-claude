@@ -18,6 +18,7 @@
     "test_threshold_5h": "しきい値 (5時間)",
     "test_threshold_7d": "しきい値 (7日間)",
     "test_startup": "起動",
+    "test_double_click": "ダブルクリック",
     "resets_in": "{duration}後にリセット ({clock})",
     "resets_tomorrow": "明日リセット、{clock}",
     "resets_weekday": "{day}にリセット、{clock}",
