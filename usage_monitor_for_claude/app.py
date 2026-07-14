@@ -205,7 +205,7 @@ class UsageMonitorForClaude:
             'USAGE_MONITOR_RESETS_AT': _future_iso(hours=5),
             'USAGE_MONITOR_TITLE': T['notify_reset_title'],
             'USAGE_MONITOR_MESSAGE': T['notify_reset'],
-        })
+        }, capture_output=True)
 
     def on_test_reset_7d(self, icon: Any = None, item: Any = None) -> None:
         run_event_command(ON_RESET_COMMAND, {
@@ -218,7 +218,7 @@ class UsageMonitorForClaude:
             'USAGE_MONITOR_RESETS_AT': _future_iso(days=7),
             'USAGE_MONITOR_TITLE': T['notify_reset_title'],
             'USAGE_MONITOR_MESSAGE': T['notify_reset'],
-        })
+        }, capture_output=True)
 
     def on_test_threshold_5h(self, icon: Any = None, item: Any = None) -> None:
         run_event_command(ON_THRESHOLD_COMMAND, {
@@ -229,7 +229,7 @@ class UsageMonitorForClaude:
             'USAGE_MONITOR_RESETS_AT': _future_iso(hours=3),
             'USAGE_MONITOR_TITLE': T['notify_threshold_title'],
             'USAGE_MONITOR_MESSAGE': T['notify_threshold_generic'].format(label=popup_label('five_hour'), pct='82'),
-        })
+        }, capture_output=True)
 
     def on_test_threshold_7d(self, icon: Any = None, item: Any = None) -> None:
         run_event_command(ON_THRESHOLD_COMMAND, {
@@ -240,7 +240,7 @@ class UsageMonitorForClaude:
             'USAGE_MONITOR_RESETS_AT': _future_iso(days=4),
             'USAGE_MONITOR_TITLE': T['notify_threshold_title'],
             'USAGE_MONITOR_MESSAGE': T['notify_threshold_generic'].format(label=popup_label('seven_day'), pct='81'),
-        })
+        }, capture_output=True)
 
     def on_test_startup(self, icon: Any = None, item: Any = None) -> None:
         run_event_command(ON_STARTUP_COMMAND, {
@@ -249,7 +249,7 @@ class UsageMonitorForClaude:
             'USAGE_MONITOR_RESETS_AT_FIVE_HOUR': '',
             'USAGE_MONITOR_UTILIZATION_SEVEN_DAY': '45',
             'USAGE_MONITOR_RESETS_AT_SEVEN_DAY': _future_iso(days=3),
-        })
+        }, capture_output=True)
 
     def on_test_double_click(self, icon: Any = None, item: Any = None) -> None:
         run_event_command(ON_DOUBLE_CLICK_COMMAND, {
@@ -258,7 +258,7 @@ class UsageMonitorForClaude:
             'USAGE_MONITOR_RESETS_AT_FIVE_HOUR': _future_iso(hours=3),
             'USAGE_MONITOR_UTILIZATION_SEVEN_DAY': '55',
             'USAGE_MONITOR_RESETS_AT_SEVEN_DAY': _future_iso(days=4),
-        })
+        }, capture_output=True)
 
     def on_quit(self, icon: Any = None, item: Any = None) -> None:
         self.running = False
@@ -668,13 +668,16 @@ class UsageMonitorForClaude:
 
         Receives the latest quota state (from the most recent successful
         update) so the command can act on current usage, mirroring the
-        startup command's environment.
+        startup command's environment.  A double-click is a user-driven
+        action, so a command that exits with a non-zero code surfaces its
+        stderr in an error dialog (``capture_output``) instead of failing
+        silently - unlike the automatic reset/threshold/startup commands.
         """
         if not ON_DOUBLE_CLICK_COMMAND:
             return
 
         env_vars = {'USAGE_MONITOR_EVENT': 'double_click', **self._quota_snapshot_env(self._last_response)}
-        run_event_command(ON_DOUBLE_CLICK_COMMAND, env_vars)
+        run_event_command(ON_DOUBLE_CLICK_COMMAND, env_vars, capture_output=True)
 
     def _run_reset_command(
         self, variant: str, pct: float, prev_pct: float, *, data: dict[str, Any], entry: dict[str, Any],

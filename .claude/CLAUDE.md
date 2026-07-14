@@ -22,6 +22,10 @@ Prioritize readability and auditability - users handle credentials and must be a
 - When no `on_double_click_command` is set, the handler is **not** installed - pystray's instant single-click popup must stay untouched (no double-click delay). Do not make the deferral unconditional
 - `WM_NOTIFY` and other message handlers (right-click menu) must still fall through to the saved `_pystray_on_notify`
 
+## Event Commands
+- Event commands run fire-and-forget with output discarded (`run_event_command` in `command.py`). User-driven actions - the "Test event commands" menu handlers and `on_double_click_command` - pass `capture_output=True`, which captures stdout/stderr, prints them, and raises an error message box when the command exits non-zero, so a wrong path is not swallowed silently. Automatic events (`on_reset_command`, `on_threshold_command`, `on_startup_command`) must stay silent (no `capture_output`) - a background event must never pop a dialog. A new event command belongs on whichever side matches: user-driven surfaces failures, automatic stays silent
+- `capture_output` waits for the command on a daemon thread, so the caller (a tray/menu/poll thread) is never blocked, even when the command launches a long-running app
+
 ## Quota Fields
 - Never hardcode API quota field names (e.g. `five_hour`, `seven_day_sonnet`) in display logic, alert handling, or reset detection - new fields must be auto-detected from the API response structure
 - A quota field is any dict entry with `utilization` and `resets_at` keys; `extra_usage` has a separate structure and is handled independently

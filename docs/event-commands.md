@@ -21,6 +21,8 @@ Commands only fire on **state changes** detected while the app is running. On ap
 
 `on_double_click_command` is the exception: it reacts to a user action, not a usage event. A single click still opens the detail popup as usual - the command only runs on a double-click. When this command is configured, opening the popup is deferred by the system double-click interval (typically about half a second) so a second click can be recognized in time; without the command set, the popup opens instantly as before.
 
+Because a double-click is user-driven, a command that exits with a non-zero (error) code shows its stderr in an error dialog, so a wrong path or a broken command is not swallowed silently. The automatic reset, threshold, and startup commands stay silent - they fire in the background and must not interrupt you with dialogs.
+
 When `on_reset_command` is configured, the app briefly wakes from idle/lock pause to poll at the expected reset time so the command fires promptly - even if the computer is unattended. If the API has not applied the reset yet (server-side delay) or the network is temporarily unavailable, the app retries at regular intervals until the reset is confirmed. `on_threshold_command` does not wake from idle - thresholds are driven by active usage, so they are checked when polling resumes after the user returns. Desktop notifications that occur during idle are deferred and shown when the user returns.
 
 > [!TIP]
@@ -30,7 +32,7 @@ When `on_reset_command` is configured, the app briefly wakes from idle/lock paus
 > ```
 
 > [!TIP]
-> Use the **Test event commands** submenu in the tray context menu to fire your configured commands with sample data. This lets you verify your command and script setup without waiting for a real event.
+> Use the **Test event commands** submenu in the tray context menu to fire your configured commands with sample data. This lets you verify your command and script setup without waiting for a real event. When triggered from this menu, the command's exit code, stdout, and stderr are printed once it finishes - visible when you run the app from source (`python -m usage_monitor_for_claude`) or from the console `--verbose` attaches to the packaged EXE. If the command exits with a non-zero (error) code, its stderr is also shown in an error dialog, so a wrong path or a command that otherwise fails silently is easy to spot (event commands normally discard all output).
 
 ## Examples
 

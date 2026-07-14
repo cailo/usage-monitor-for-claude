@@ -10,9 +10,11 @@ any string interpolation in the command itself.
 """
 from __future__ import annotations
 
+import ctypes
 import os
 import subprocess
 import sys
+import threading
 import traceback
 from pathlib import Path
 
@@ -21,7 +23,7 @@ from . import __version__
 __all__ = ['run_event_command']
 
 
-def run_event_command(commands: list[str], env_vars: dict[str, str]) -> None:
+def run_event_command(commands: list[str], env_vars: dict[str, str], capture_output: bool = False) -> None:
     """Launch shell commands with event-specific environment variables.
 
     Each command runs asynchronously (fire-and-forget).  Exceptions from
@@ -35,6 +37,15 @@ def run_event_command(commands: list[str], env_vars: dict[str, str]) -> None:
     env_vars : dict[str, str]
         Mapping of ``USAGE_MONITOR_*`` environment variable names to
         their values.  Merged into the current process environment.
+    capture_output : bool
+        When True, capture each command's stdout, stderr, and exit code and
+        print them once it finishes, and raise an error message box with
+        stderr if the command exits with a non-zero code.  Used for
+        user-driven actions (the "Test event commands" menu and the
+        double-click command) so a failing command is not swallowed silently.
+        The wait happens on a background thread, so the call stays
+        non-blocking even for a command that keeps running (e.g. a launched
+        app).
     """
     if not commands:
         return
@@ -51,10 +62,52 @@ def run_event_command(commands: list[str], env_vars: dict[str, str]) -> None:
 
     for command in commands:
         try:
-            subprocess.Popen(
-                command, shell=True, env=env, cwd=working_dir,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
+            if capture_output:
+                _launch_and_report(command, env, working_dir)
+            else:
+                subprocess.Popen(
+                    command, shell=True, env=env, cwd=working_dir,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
         except Exception:
             traceback.print_exc()
+
+
+def _launch_and_report(command: str, env: dict[str, str], working_dir: Path) -> None:
+    """Launch *command* and print its stdout, stderr, and exit code once it exits.
+
+    The process is waited on in a background daemon thread so the caller is
+    never blocked, even by a command that keeps running (e.g. a launched app).
+    A non-zero exit code additionally raises an error message box with stderr.
+    """
+    process = subprocess.Popen(
+        command, shell=True, env=env, cwd=working_dir,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, errors='replace',
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+
+    def report() -> None:
+        try:
+            stdout, stderr = process.communicate()
+        except Exception:
+            traceback.print_exc()
+            return
+
+        print(f'[event command] {command}')
+        print(f'  exit code: {process.returncode}')
+        print(f'  stdout:\n{stdout.rstrip() if stdout.strip() else "    (empty)"}')
+        print(f'  stderr:\n{stderr.rstrip() if stderr.strip() else "    (empty)"}')
+
+        if process.returncode != 0:
+            _show_error_box(command, process.returncode, stderr)
+
+    threading.Thread(target=report, daemon=True).start()
+
+
+def _show_error_box(command: str, returncode: int, stderr: str) -> None:
+    """Show an error message box reporting a failed command and its stderr."""
+    detail = stderr.strip() or '(no error output on stderr)'
+    message = f'The event command exited with code {returncode}:\n\n{command}\n\n{detail}'
+    ctypes.windll.user32.MessageBoxW(0, message[:2000], 'Usage Monitor for Claude - Event Command Failed', 0x10)

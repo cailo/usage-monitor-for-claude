@@ -9,11 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- New `on_double_click_command` event - run a custom command when you double-click the tray icon, while a single click still opens the usage popup. Handy for launching a companion tool like [Agent Monitor for Claude](https://github.com/jens-duttke/agent-monitor-for-claude) straight from the tray
+- New `on_double_click_command` event - run a custom command when you double-click the tray icon, while a single click still opens the usage popup. Handy for launching a companion tool like [Agent Monitor for Claude](https://github.com/jens-duttke/agent-monitor-for-claude) straight from the tray. Since a double-click is a user-driven action, a command that fails (non-zero exit code) shows its error output in a dialog instead of failing silently
 - [Turn off the Claude update notification](https://github.com/jens-duttke/usage-monitor-for-claude/issues/64) - set the new `notify_claude_update` setting to `false` to stop the notification shown when a background token refresh installs a new Claude CLI version
 
 ### Changed
 
+- The **Test event commands** menu now prints each command's exit code, stdout, and stderr once it finishes (visible when running from source or with `--verbose`), and pops up an error dialog with stderr when a command exits with a non-zero code, so a command that silently does nothing - a wrong path, for example - is easy to diagnose
 - Switching your Claude account now updates the tray icon and popup right away instead of at the next poll (previously up to several minutes, and slower still when the old token had already been rejected and triggered a background `claude update`) - the new account's usage loads as soon as the credentials change
 - After your access token expires and gets refreshed, the app now recovers usage and account info as soon as the new token appears, instead of waiting for the next poll or needing a restart
 

@@ -1806,6 +1806,8 @@ class TestThresholdCommand(unittest.TestCase):
         self.assertEqual(env['USAGE_MONITOR_RESETS_AT'], '2025-01-15T18:00:00Z')
         self.assertIn('USAGE_MONITOR_TITLE', env)
         self.assertIn('USAGE_MONITOR_MESSAGE', env)
+        # Threshold crossings fire automatically, so they stay silent (no error dialog).
+        self.assertFalse(mock_cmd.call_args[1].get('capture_output'))
 
     @patch('usage_monitor_for_claude.app.ON_THRESHOLD_COMMAND', [])
     @patch('usage_monitor_for_claude.app.run_event_command')
@@ -1962,6 +1964,8 @@ class TestTestEventCommands(unittest.TestCase):
         self.assertIn('USAGE_MONITOR_RESETS_AT', env)
         self.assertIn('USAGE_MONITOR_TITLE', env)
         self.assertIn('USAGE_MONITOR_MESSAGE', env)
+        # Test-menu invocations are user-driven, so failures are surfaced.
+        self.assertTrue(mock_cmd.call_args[1].get('capture_output'))
 
     @patch('usage_monitor_for_claude.app.ON_RESET_COMMAND', ['echo reset'])
     @patch('usage_monitor_for_claude.app.run_event_command')
@@ -2769,6 +2773,8 @@ class TestStartupCommand(unittest.TestCase):
         self.assertEqual(env['USAGE_MONITOR_RESETS_AT_FIVE_HOUR'], '')
         self.assertEqual(env['USAGE_MONITOR_UTILIZATION_SEVEN_DAY'], '45')
         self.assertEqual(env['USAGE_MONITOR_RESETS_AT_SEVEN_DAY'], '2025-01-20T12:00:00Z')
+        # Startup fires automatically (not user-driven), so it stays silent.
+        self.assertFalse(mock_cmd.call_args[1].get('capture_output'))
 
     @patch('usage_monitor_for_claude.app.ON_STARTUP_COMMAND', ['echo startup'])
     @patch('usage_monitor_for_claude.app.run_event_command')
@@ -2929,6 +2935,16 @@ class TestDoubleClickCommand(unittest.TestCase):
         self.assertEqual(env['USAGE_MONITOR_UTILIZATION_FIVE_HOUR'], '30')
         self.assertEqual(env['USAGE_MONITOR_RESETS_AT_FIVE_HOUR'], '2025-01-15T18:00:00Z')
         self.assertEqual(env['USAGE_MONITOR_UTILIZATION_SEVEN_DAY'], '55')
+
+    @patch('usage_monitor_for_claude.app.ON_DOUBLE_CLICK_COMMAND', ['run.exe'])
+    @patch('usage_monitor_for_claude.app.run_event_command')
+    def test_captures_output_so_failures_surface(self, mock_cmd):
+        """A double-click is user-driven, so it requests output capture (error dialog on failure)."""
+        self.app._last_response = {'five_hour': {'utilization': 10.0}}
+
+        self.app._run_double_click_command()
+
+        self.assertTrue(mock_cmd.call_args[1].get('capture_output'))
 
     @patch('usage_monitor_for_claude.app.ON_DOUBLE_CLICK_COMMAND', [])
     @patch('usage_monitor_for_claude.app.run_event_command')
