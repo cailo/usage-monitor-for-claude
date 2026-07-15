@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Multi-account support - launch additional instances with `--config-dir="<path>"` to monitor a second Claude account side by side; each instance reads its own credentials and settings, gets its own tray tooltip prefix and autostart entry, and keeps its `--config-dir` across restarts (thanks to [@hybrid2102](https://github.com/hybrid2102) for the contribution)
+- [Multi-account support](https://github.com/jens-duttke/usage-monitor-for-claude/discussions/23) - launch additional instances with `--config-dir="<path>"` to monitor a second Claude account side by side; each instance reads its own credentials and settings, gets its own tray tooltip prefix and autostart entry, and keeps its `--config-dir` across restarts (thanks to [@hybrid2102](https://github.com/hybrid2102) for the contribution)
 
 ### Changed
 
