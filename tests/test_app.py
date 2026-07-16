@@ -949,6 +949,17 @@ class TestRenderTray(unittest.TestCase):
 
     @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
     @patch('usage_monitor_for_claude.app.create_icon_image')
+    @patch('usage_monitor_for_claude.app.ICON_FIELDS', ['limits', 'five_hour'])
+    def test_icon_field_pointing_to_non_dict_defaults_to_zero(self, mock_icon, _tooltip):
+        """An icon field holding a non-dict response value (e.g. the limits array)
+        renders as 0% instead of crashing the render path."""
+        self.app._last_response = {'five_hour': {'utilization': 42.0}, 'limits': [{'percent': 12}]}
+        self.app._render_tray()
+
+        mock_icon.assert_called_once_with(0, 42.0, False, mode_top='utilization', mode_bottom='utilization', time_pct_top=None, time_pct_bottom=None, extra_usage_available=False)
+
+    @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
+    @patch('usage_monitor_for_claude.app.create_icon_image')
     @patch('usage_monitor_for_claude.app.elapsed_pct', return_value=40.0)
     @patch('usage_monitor_for_claude.app.ICON_FIELDS', ['five_hour:overage', 'seven_day'])
     def test_overage_mode_passes_time_pct(self, mock_elapsed, mock_icon, _tooltip):

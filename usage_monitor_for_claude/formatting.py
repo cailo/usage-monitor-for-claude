@@ -414,7 +414,7 @@ def format_tooltip(data: dict[str, Any]) -> str:
     lines = [T['tooltip_title']]
     for key in TOOLTIP_FIELDS:
         entry = data.get(key)
-        if entry and entry.get('utilization') is not None:
+        if isinstance(entry, dict) and entry.get('utilization') is not None:
             short = tooltip_label(key)
             pct = f"{entry['utilization']:.0f}%"
             reset = time_until(entry.get('resets_at', ''))

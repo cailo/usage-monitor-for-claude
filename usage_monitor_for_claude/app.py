@@ -384,8 +384,14 @@ class UsageMonitorForClaude:
         else:
             top_field, top_mode = ICON_FIELDS[0].split(':', 1) if ':' in ICON_FIELDS[0] else (ICON_FIELDS[0], 'utilization')
             bottom_field, bottom_mode = ICON_FIELDS[1].split(':', 1) if ':' in ICON_FIELDS[1] else (ICON_FIELDS[1], 'utilization')
-            top_entry = data.get(top_field) or {}
-            bottom_entry = data.get(bottom_field) or {}
+            # isinstance instead of truthiness: a configured field may point at
+            # a non-dict response value (e.g. the raw limits array).
+            top_entry = data.get(top_field)
+            bottom_entry = data.get(bottom_field)
+            if not isinstance(top_entry, dict):
+                top_entry = {}
+            if not isinstance(bottom_entry, dict):
+                bottom_entry = {}
             pct_top = top_entry.get('utilization', 0) or 0
             pct_bottom = bottom_entry.get('utilization', 0) or 0
             top_period = field_period(top_field)

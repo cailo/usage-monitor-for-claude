@@ -840,6 +840,17 @@ class TestFormatTooltip(unittest.TestCase):
         data = {'five_hour': {'utilization': 50.0, 'resets_at': ''}}
         self.assertEqual(format_tooltip(data), 'Claude Usage')
 
+    @patch('usage_monitor_for_claude.formatting.time_until', return_value='')
+    @patch('usage_monitor_for_claude.formatting.TOOLTIP_FIELDS', ['five_hour', 'limits'])
+    def test_custom_field_pointing_to_non_dict_skipped(self, _mock_tu):
+        """A configured field holding a non-dict response value (e.g. the limits
+        array) is skipped instead of crashing the poll loop."""
+        data = {
+            'five_hour': {'utilization': 50.0, 'resets_at': ''},
+            'limits': [{'percent': 12, 'group': 'weekly'}],
+        }
+        self.assertEqual(format_tooltip(data), 'Claude Usage\n5h: 50%')
+
 
 # ---------------------------------------------------------------------------
 # tooltip length - Windows limits tooltip text to 127 characters
