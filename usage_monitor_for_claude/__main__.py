@@ -45,6 +45,7 @@ if _verbose:
 import webview  # type: ignore[import-untyped]  # no type stubs available
 
 from usage_monitor_for_claude.app import UsageMonitorForClaude, crash_log
+from usage_monitor_for_claude.notification_identity import register_notification_identity
 from usage_monitor_for_claude.single_instance import ensure_single_instance, release_instance_lock
 
 if _verbose:
@@ -96,6 +97,11 @@ try:
         _verbose_step('another instance is running, exiting')
         sys.exit(0)
     _verbose_step('ensure_single_instance... OK')
+
+    # Give notifications a fixed logo instead of the live tray icon.
+    # Must run before any window is created (AppUserModelID requirement).
+    _verbose_step('register_notification_identity...')
+    register_notification_identity()
 
     # pywebview requires the main thread for its GUI event loop.
     # A persistent hidden window keeps the loop alive while the

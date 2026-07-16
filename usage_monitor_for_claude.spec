@@ -12,6 +12,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('locale/*.json', 'locale'),
+        ('usage_monitor_for_claude/notification_logo.ico', 'usage_monitor_for_claude'),
         ('usage_monitor_for_claude/popup/popup.html', 'usage_monitor_for_claude/popup'),
         ('usage_monitor_for_claude/popup/popup.css', 'usage_monitor_for_claude/popup'),
         ('usage_monitor_for_claude/popup/popup.js', 'usage_monitor_for_claude/popup'),

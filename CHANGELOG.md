@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Notifications deferred while you were away can no longer stay stuck in the queue for hours (or get lost to a rare crash) when you return at just the wrong moment - they now appear promptly once you are back
 - Setting an event command to an empty string (`"on_double_click_command": ""`) now disables it like `[]` does - previously it still activated the double-click machinery, delaying every single click by the double-click interval and launching an empty shell on double-click
 - Two quotas resetting at the same time (e.g. a weekly window together with its per-model limit) now produce a single "quota reset" notification instead of identical back-to-back toasts
+- [Notification icon](https://github.com/jens-duttke/usage-monitor-for-claude/issues/67) - alerts and reset notifications now show the app logo instead of the current tray icon, so the icon no longer says "you have nothing left" when a limit was just reset or is only partway used
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)
 
