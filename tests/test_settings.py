@@ -133,6 +133,11 @@ class TestLoadSettings(unittest.TestCase):
             result = _load(Path(app_tmp), Path(home_tmp))
         self.assertEqual(result['poll_interval'], 60)
 
+    def test_all_popup_theme_colors_exported(self):
+        """Every user-overridable popup theme color is part of the declared public API."""
+        for name in ('BG', 'FG', 'FG_DIM', 'FG_HEADING', 'FG_LINK', 'BAR_BG', 'BAR_FG', 'BAR_FG_WARN', 'BAR_DIVIDER', 'BAR_MARKER'):
+            self.assertIn(name, settings_mod.__all__)
+
     def test_utf8_bom_file_loaded(self):
         """A UTF-8 settings file with BOM (PowerShell 5 Out-File, legacy Notepad) is accepted."""
         with TemporaryDirectory() as app_tmp, TemporaryDirectory() as home_tmp:
