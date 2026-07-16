@@ -133,7 +133,9 @@ def create_icon_image(
         text, font = '$', load_font(42)
         stroke_width = 2
     elif pct_top > 0:
-        text, font = f'{pct_top:.0f}', load_font(40)
+        # Clamp to 99: values in [99.5, 100) would round to a three-digit
+        # '100' that overflows the canvas and reads as exhausted.
+        text, font = f'{min(pct_top, 99):.0f}', load_font(40)
     else:
         text, font = 'C', load_font(42)
 

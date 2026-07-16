@@ -47,6 +47,26 @@ class TestWatchThemeChange(unittest.TestCase):
         callback.assert_not_called()
 
 
+class TestIconGlyphNearExhaustion(unittest.TestCase):
+    """Tests for the percentage glyph just below 100% utilization."""
+
+    def test_99_5_to_99_99_renders_like_99(self):
+        """Utilization in [99.5, 100) must not round up to a three-digit '100'
+        that overflows the 64 px canvas (and reads as exhausted) - it renders
+        exactly like 99%."""
+        reference = tray_icon_mod.create_icon_image(99.0, 10.0)
+        for pct in (99.5, 99.9, 99.99):
+            with self.subTest(pct=pct):
+                img = tray_icon_mod.create_icon_image(pct, 10.0)
+                self.assertEqual(img.tobytes(), reference.tobytes())
+
+    def test_100_renders_exhausted_glyph(self):
+        """At exactly 100% the exhausted glyph replaces the number."""
+        img = tray_icon_mod.create_icon_image(100.0, 10.0)
+        reference = tray_icon_mod.create_icon_image(99.0, 10.0)
+        self.assertNotEqual(img.tobytes(), reference.tobytes())
+
+
 class TestLoadFont(unittest.TestCase):
     """Tests for load_font()."""
 
