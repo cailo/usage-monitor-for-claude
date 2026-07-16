@@ -135,6 +135,27 @@ console.log(JSON.stringify(els.usageBars.children.map((bar) => ({
             {'label': '7d Opus', 'pct': '99%'},
         ])
 
+    def test_marker_and_divider_positions_stable_across_update(self):
+        """The 2 px marker/divider elements are centered with a -1px correction
+        on create; an in-place update must use the identical expression, or the
+        elements shift by 1 px after the first data update."""
+        result = _run_scenario('''
+const fields = { key: 'five_hour', label: '5h', marker_rel: 0.5, dividers: [0.25] };
+updateUsageBars([makeEntry(Object.assign({ pct_text: '10%' }, fields))]);
+const container = els.usageBars.children[0].querySelector('.bar-container');
+const before = {
+    marker: container.querySelector('.bar-marker').style.left,
+    divider: container.querySelector('.bar-divider').style.left,
+};
+updateUsageBars([makeEntry(Object.assign({ pct_text: '11%' }, fields))]);
+const after = {
+    marker: container.querySelector('.bar-marker').style.left,
+    divider: container.querySelector('.bar-divider').style.left,
+};
+console.log(JSON.stringify({ before, after }));
+''')
+        self.assertEqual(result['after'], result['before'])
+
     def test_unchanged_field_set_updates_in_place(self):
         """With an unchanged field set, bars are updated in place (no rebuild)."""
         result = _run_scenario('''

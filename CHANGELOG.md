@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On a weekly usage bar spanning a daylight-saving changeover, the day dividers after the changeover now stay on the actual local midnights instead of drifting by one hour
 - The `--verbose` diagnostics now redact the Windows username from paths reliably - previously a differently-cased path (e.g. a lowercase `CLAUDE_CONFIG_DIR`) slipped through unredacted, and a neighboring user profile could be partially mangled
 - On Windows 10 versions older than 1703 the app no longer dies at startup with an unhandled error dialog - it now starts with the legacy DPI behavior instead
+- The popup's time marker and day dividers no longer shift by one pixel (with a visible slide animation on the marker) after the first live data update
 - [Notification icon](https://github.com/jens-duttke/usage-monitor-for-claude/issues/67) - alerts and reset notifications now show the app logo instead of the current tray icon, so the icon no longer says "you have nothing left" when a limit was just reset or is only partway used
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)

@@ -409,7 +409,7 @@ function updateBarElement(div, entry) {
             marker.className = 'bar-marker';
             container.appendChild(marker);
         }
-        marker.style.left = `${entry.marker_rel * 100}%`;
+        marker.style.left = `calc(${entry.marker_rel * 100}% - 1px)`;
     } else if (marker) {
         marker.remove();
     }
@@ -418,7 +418,7 @@ function updateBarElement(div, entry) {
     for (const pos of entry.dividers) {
         const d = document.createElement('div');
         d.className = 'bar-divider';
-        d.style.left = `${pos * 100}%`;
+        d.style.left = `calc(${pos * 100}% - 1px)`;
         container.appendChild(d);
     }
 
