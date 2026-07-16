@@ -36,7 +36,13 @@ if _verbose and getattr(sys, 'frozen', False):
 
 # Per-Monitor V2 must be set before pywebview's legacy SetProcessDPIAware() call,
 # which only sets SYSTEM_DPI_AWARE and breaks native menu hover at high DPI.
-ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_ssize_t(-4))
+# The API exists only from Windows 10 1703; ctypes raises AttributeError for a
+# missing export, which must not kill startup - pywebview's legacy call is the
+# fallback on older systems.
+try:
+    ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_ssize_t(-4))
+except AttributeError:
+    pass
 
 if _verbose:
     from usage_monitor_for_claude.verbose import print_startup_diagnostics
