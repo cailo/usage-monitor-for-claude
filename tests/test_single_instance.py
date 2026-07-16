@@ -106,7 +106,9 @@ class TestEnsureSingleInstance(unittest.TestCase):
     @patch(f'{MODULE}.ctypes')
     def test_duplicate_user_accepts_returns_true(self, mock_ctypes, mock_store, mock_read, mock_terminate):
         """Duplicate detected, user clicks Yes - terminates old instance and returns True."""
-        mock_ctypes.get_last_error.return_value = 0xB7
+        # First CreateMutexW finds the existing mutex; after the holder is
+        # terminated, the second call creates it fresh (no ERROR_ALREADY_EXISTS).
+        mock_ctypes.get_last_error.side_effect = [0xB7, 0]
         mock_kernel32 = MagicMock()
         mock_kernel32.CreateMutexW.return_value = 42
 
@@ -121,6 +123,76 @@ class TestEnsureSingleInstance(unittest.TestCase):
         self.assertTrue(result)
         mock_terminate.assert_called_once_with(99999)
         self.assertEqual(mock_store.call_count, 1)
+
+    @patch(f'{MODULE}._terminate_pid')
+    @patch(f'{MODULE}._read_holder_info', return_value=(99999, '1.9.0'))
+    @patch(f'{MODULE}._store_holder_info')
+    @patch(f'{MODULE}.ctypes')
+    def test_replace_fails_when_old_instance_survives(self, mock_ctypes, mock_store, mock_read, mock_terminate):
+        """If the mutex still exists after the terminate attempt, the old instance
+        is still running - the new instance must report failure and exit instead
+        of running alongside it."""
+        mock_ctypes.get_last_error.side_effect = [0xB7, 0xB7]
+        mock_kernel32 = MagicMock()
+        mock_kernel32.CreateMutexW.return_value = 42
+
+        mock_user32 = MagicMock()
+        mock_user32.MessageBoxW.return_value = 6  # IDYES
+
+        with patch(f'{MODULE}._kernel32', mock_kernel32), \
+             patch(f'{MODULE}.ctypes.windll.user32', mock_user32):
+            from usage_monitor_for_claude.single_instance import ensure_single_instance
+            result = ensure_single_instance()
+
+        self.assertFalse(result)
+        mock_store.assert_not_called()
+        # Duplicate dialog plus the replacement-failed error box
+        self.assertEqual(mock_user32.MessageBoxW.call_count, 2)
+
+    @patch(f'{MODULE}._terminate_pid')
+    @patch(f'{MODULE}._read_holder_info', return_value=(99999, '1.9.0'))
+    @patch(f'{MODULE}._store_holder_info')
+    @patch(f'{MODULE}.ctypes')
+    def test_replace_fails_when_mutex_recreation_fails(self, mock_ctypes, mock_store, mock_read, mock_terminate):
+        """A NULL handle from the post-terminate CreateMutexW (e.g. access denied
+        against an elevated survivor) must report failure, not proceed unlocked."""
+        mock_ctypes.get_last_error.side_effect = [0xB7, 0x5]
+        mock_kernel32 = MagicMock()
+        mock_kernel32.CreateMutexW.side_effect = [42, 0]
+
+        mock_user32 = MagicMock()
+        mock_user32.MessageBoxW.return_value = 6  # IDYES
+
+        with patch(f'{MODULE}._kernel32', mock_kernel32), \
+             patch(f'{MODULE}.ctypes.windll.user32', mock_user32):
+            from usage_monitor_for_claude.single_instance import ensure_single_instance
+            result = ensure_single_instance()
+
+        self.assertFalse(result)
+        mock_store.assert_not_called()
+
+    @patch(f'{MODULE}._terminate_pid')
+    @patch(f'{MODULE}._read_holder_info', return_value=(None, None))
+    @patch(f'{MODULE}._store_holder_info')
+    @patch(f'{MODULE}.ctypes')
+    def test_replace_succeeds_without_holder_pid_when_mutex_is_free(self, mock_ctypes, mock_store, mock_read, mock_terminate):
+        """With unreadable holder info but a mutex that turns out to be free
+        (holder exited meanwhile), the replacement proceeds."""
+        mock_ctypes.get_last_error.side_effect = [0xB7, 0]
+        mock_kernel32 = MagicMock()
+        mock_kernel32.CreateMutexW.return_value = 42
+
+        mock_user32 = MagicMock()
+        mock_user32.MessageBoxW.return_value = 6  # IDYES
+
+        with patch(f'{MODULE}._kernel32', mock_kernel32), \
+             patch(f'{MODULE}.ctypes.windll.user32', mock_user32):
+            from usage_monitor_for_claude.single_instance import ensure_single_instance
+            result = ensure_single_instance()
+
+        self.assertTrue(result)
+        mock_terminate.assert_not_called()
+        mock_store.assert_called_once()
 
     @patch(f'{MODULE}._read_holder_info', return_value=(99999, '1.9.0'))
     @patch(f'{MODULE}.ctypes')

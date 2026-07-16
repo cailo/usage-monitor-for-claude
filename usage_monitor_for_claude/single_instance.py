@@ -224,8 +224,21 @@ def ensure_single_instance() -> bool:
         _terminate_pid(holder_pid)
     if _mutex_handle:
         _kernel32.CloseHandle(_mutex_handle)
+        _mutex_handle = None
 
+    # Recreating the mutex is the ground truth for whether the old instance
+    # is really gone: its open handle keeps the named object alive, so only
+    # a fresh creation (valid handle, no ERROR_ALREADY_EXISTS) proves the
+    # holder has exited.  _terminate_pid is best effort - it cannot open an
+    # elevated process, and the old instance may need a moment to die.
     _mutex_handle = _kernel32.CreateMutexW(None, False, mutex_name)
+    if not _mutex_handle or ctypes.get_last_error() == _ERROR_ALREADY_EXISTS:
+        if _mutex_handle:
+            _kernel32.CloseHandle(_mutex_handle)
+        _mutex_handle = None
+        ctypes.windll.user32.MessageBoxW(None, T['replace_failed'], title, 0x10 | MB_TOPMOST)  # MB_ICONERROR
+        return False
+
     _store_holder_info()
     return True
 

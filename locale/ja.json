@@ -65,5 +65,6 @@
     "status_updated_s": "{s}秒前に更新",
     "status_next_update": "次の更新まで{duration}",
     "status_refreshing": "更新中...",
-    "already_running": "Usage Monitor for Claude v{running_version} は既に実行中です。\n\n実行中のインスタンスを置き換えますか？"
+    "already_running": "Usage Monitor for Claude v{running_version} は既に実行中です。\n\n実行中のインスタンスを置き換えますか？",
+    "replace_failed": "実行中のインスタンスを置き換えられませんでした。\n\n手動で終了してから、もう一度お試しください。"
 }

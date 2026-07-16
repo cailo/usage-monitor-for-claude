@@ -65,5 +65,6 @@
     "status_updated_s": "Atualizado há {s}s",
     "status_next_update": "Próx. atualiz.: {duration}",
     "status_refreshing": "Atualizando...",
-    "already_running": "Usage Monitor for Claude v{running_version} já está em execução.\n\nDeseja substituir a instância em execução?"
+    "already_running": "Usage Monitor for Claude v{running_version} já está em execução.\n\nDeseja substituir a instância em execução?",
+    "replace_failed": "Não foi possível substituir a instância em execução.\n\nFeche-a manualmente e tente novamente."
 }
