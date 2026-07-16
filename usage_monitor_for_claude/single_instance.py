@@ -22,6 +22,7 @@ __all__ = ['ensure_single_instance', 'release_instance_lock']
 
 _MUTEX_BASE_NAME = 'UsageMonitorForClaude_SingleInstance'
 _PID_MAPPING_BASE_NAME = 'UsageMonitorForClaude_HolderPID'
+_ERROR_ACCESS_DENIED = 0x5
 _ERROR_ALREADY_EXISTS = 0xB7
 _INVALID_HANDLE = ctypes.c_void_p(-1).value
 _PAGE_READWRITE = 0x04
@@ -176,9 +177,22 @@ def ensure_single_instance() -> bool:
     global _mutex_handle
     mutex_name = _object_names()[0]
     _mutex_handle = _kernel32.CreateMutexW(None, False, mutex_name)
-    if ctypes.get_last_error() != _ERROR_ALREADY_EXISTS:
+    last_error = ctypes.get_last_error()
+
+    if _mutex_handle and last_error != _ERROR_ALREADY_EXISTS:
         _store_holder_info()
         return True
+
+    # A NULL handle with ERROR_ACCESS_DENIED means the mutex exists but was
+    # created under a different security context (e.g. an elevated instance):
+    # treat it as "already running".  Any other NULL failure is unexpected -
+    # fail closed rather than run a second, unguarded instance.
+    if not _mutex_handle and last_error != _ERROR_ACCESS_DENIED:
+        ctypes.windll.user32.MessageBoxW(
+            None, f'Failed to create the single-instance mutex (Windows error {last_error}).',
+            T['popup_title'], 0x10,  # MB_ICONERROR
+        )
+        return False
 
     # Another instance is running - ask the user.
     MB_YESNO = 0x04
@@ -201,13 +215,15 @@ def ensure_single_instance() -> bool:
         MB_YESNO | MB_ICONQUESTION | MB_TOPMOST,
     )
     if answer != IDYES:
-        _kernel32.CloseHandle(_mutex_handle)
+        if _mutex_handle:
+            _kernel32.CloseHandle(_mutex_handle)
         _mutex_handle = None
         return False
 
     if holder_pid:
         _terminate_pid(holder_pid)
-    _kernel32.CloseHandle(_mutex_handle)
+    if _mutex_handle:
+        _kernel32.CloseHandle(_mutex_handle)
 
     _mutex_handle = _kernel32.CreateMutexW(None, False, mutex_name)
     _store_holder_info()

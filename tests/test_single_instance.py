@@ -178,6 +178,50 @@ class TestEnsureSingleInstance(unittest.TestCase):
         message = mock_user32.MessageBoxW.call_args[0][1]
         self.assertIn('?', message)
 
+    @patch(f'{MODULE}._store_holder_info')
+    @patch(f'{MODULE}._read_holder_info', return_value=(None, None))
+    @patch(f'{MODULE}.ctypes')
+    def test_mutex_access_denied_treated_as_running_instance(self, mock_ctypes, mock_read, mock_store):
+        """A NULL mutex handle with ERROR_ACCESS_DENIED means another instance created
+        the mutex under a different security context (e.g. elevated) - the duplicate
+        dialog must appear instead of silently running a second, unguarded instance."""
+        mock_ctypes.get_last_error.return_value = 0x5  # ERROR_ACCESS_DENIED
+        mock_kernel32 = MagicMock()
+        mock_kernel32.CreateMutexW.return_value = 0  # NULL: open denied
+
+        mock_user32 = MagicMock()
+        mock_user32.MessageBoxW.return_value = 7  # IDNO
+
+        with patch(f'{MODULE}._kernel32', mock_kernel32), \
+             patch(f'{MODULE}.ctypes.windll.user32', mock_user32):
+            from usage_monitor_for_claude.single_instance import ensure_single_instance
+            result = ensure_single_instance()
+
+        self.assertFalse(result)
+        mock_user32.MessageBoxW.assert_called_once()
+        mock_store.assert_not_called()
+
+    @patch(f'{MODULE}._terminate_pid')
+    @patch(f'{MODULE}._store_holder_info')
+    @patch(f'{MODULE}._read_holder_info', return_value=(None, None))
+    @patch(f'{MODULE}.ctypes')
+    def test_mutex_unexpected_failure_fails_closed(self, mock_ctypes, mock_read, mock_store, mock_terminate):
+        """A NULL mutex handle with an unexpected error must not run unguarded."""
+        mock_ctypes.get_last_error.return_value = 0x57  # ERROR_INVALID_PARAMETER
+        mock_kernel32 = MagicMock()
+        mock_kernel32.CreateMutexW.return_value = 0
+
+        mock_user32 = MagicMock()
+
+        with patch(f'{MODULE}._kernel32', mock_kernel32), \
+             patch(f'{MODULE}.ctypes.windll.user32', mock_user32):
+            from usage_monitor_for_claude.single_instance import ensure_single_instance
+            result = ensure_single_instance()
+
+        self.assertFalse(result)
+        mock_store.assert_not_called()
+        mock_terminate.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Per-instance object names
