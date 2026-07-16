@@ -81,7 +81,9 @@ def _load_settings() -> dict:
     for path in search_paths:
         if path.is_file():
             try:
-                text = path.read_text(encoding='utf-8').strip()
+                # utf-8-sig reads BOM-less UTF-8 identically and strips a BOM
+                # when present (written by e.g. PowerShell 5 or legacy Notepad).
+                text = path.read_text(encoding='utf-8-sig').strip()
                 if not text:
                     return {}
                 data = json.loads(text)

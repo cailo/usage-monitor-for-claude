@@ -133,6 +133,14 @@ class TestLoadSettings(unittest.TestCase):
             result = _load(Path(app_tmp), Path(home_tmp))
         self.assertEqual(result['poll_interval'], 60)
 
+    def test_utf8_bom_file_loaded(self):
+        """A UTF-8 settings file with BOM (PowerShell 5 Out-File, legacy Notepad) is accepted."""
+        with TemporaryDirectory() as app_tmp, TemporaryDirectory() as home_tmp:
+            settings = {'poll_interval': 300}
+            (Path(app_tmp) / settings_mod.SETTINGS_FILENAME).write_bytes(b'\xef\xbb\xbf' + json.dumps(settings).encode('utf-8'))
+            result = _load(Path(app_tmp), Path(home_tmp))
+        self.assertEqual(result, settings)
+
     def test_empty_json_object(self):
         """An empty JSON object is valid and returns empty dict."""
         with TemporaryDirectory() as app_tmp, TemporaryDirectory() as home_tmp:
