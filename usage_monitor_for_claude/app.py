@@ -895,12 +895,17 @@ class UsageMonitorForClaude:
                 if lst is not None and (last_success_seen is None or lst > last_success_seen):
                     last_success_seen = lst
                     new_target = max(target, lst + interval)
-                    # Never let that push move the poll past a reset-aligned slot,
-                    # so the confirming poll still lands just after the reset
-                    # instead of a full interval later.
+                    # Never let that push move the poll past a reset-aligned
+                    # slot, nor drop it into the danger window (the last
+                    # POLL_FAST - RESET_BUFFER seconds before the reset): a
+                    # poll there consumes the cooldown, so the confirming poll
+                    # would overshoot the reset by up to a full cooldown.
                     next_reset = self._seconds_until_next_reset()
-                    if next_reset is not None and next_reset < interval:
-                        new_target = min(new_target, self._reset_aligned_poll_target(next_reset))
+                    if next_reset is not None:
+                        reset_epoch = time.time() + next_reset
+                        aligned = self._reset_aligned_poll_target(next_reset)
+                        if new_target > aligned or reset_epoch - (POLL_FAST - RESET_BUFFER) < new_target < reset_epoch:
+                            new_target = aligned
                     target = new_target
                     self._next_poll_time = target
 

@@ -2360,6 +2360,35 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
         # No reset: poll stays at last_success + interval (1000 + 180 = 1180).
         self.assertEqual(self.app._next_poll_time, 1000.0 + 180)
 
+    @patch('usage_monitor_for_claude.app.ON_RESET_COMMAND', [])
+    @patch('usage_monitor_for_claude.app.time.time', return_value=1000.0)
+    def test_midwait_fetch_never_lands_in_danger_window(self, mock_time):
+        """A pushed-forward poll must not land in the danger window (the last
+        POLL_FAST - RESET_BUFFER seconds before a reset), from where the
+        reset-confirming poll would overshoot the reset by up to a cooldown."""
+        self.app.cache.last_success_time = 900.0
+
+        def advance_success(_seconds):
+            self.app.cache.last_success_time = 1000.0
+
+        def is_away():
+            self.app.running = False
+            return False
+
+        # Reset in 209 s: interval (180) <= 209 < interval + danger (295), so the
+        # pushed target 1000 + 180 = 1180 would land at reset - 29, inside the
+        # danger window [1094, 1209).
+        with patch.object(self.app, 'update'), \
+             patch.object(self.app, '_calculate_poll_interval', return_value=180), \
+             patch.object(self.app, '_is_user_away', side_effect=is_away), \
+             patch.object(self.app, '_seconds_until_next_reset', return_value=209.0), \
+             patch('usage_monitor_for_claude.app.time.sleep', side_effect=advance_success):
+            self.app.poll_loop()
+
+        # Deferred to the reset-aligned slot just after the reset:
+        # max(1000 + 209 + RESET_BUFFER, 1000 + POLL_FAST) = 1214.
+        self.assertEqual(self.app._next_poll_time, 1000.0 + 209.0 + RESET_BUFFER)
+
 
 class TestPollLoopAccountSwitch(unittest.TestCase):
     """Tests for the poll loop's reaction to a credentials token change."""
