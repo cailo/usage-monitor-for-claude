@@ -287,6 +287,26 @@ class TestFindInstallations(unittest.TestCase):
             result = find_installations()
         self.assertEqual(result, [])
 
+    @patch('usage_monitor_for_claude.claude_cli.cli_version', return_value='')
+    @patch('usage_monitor_for_claude.claude_cli.CLAUDE_CLI_PATH')
+    def test_unreadable_extension_dir_skipped(self, mock_cli_path, _mock_version):
+        """A directory that exists but cannot be enumerated (ACL denial, broken
+        junction) is skipped instead of crashing the popup threads."""
+        mock_cli_path.is_file.return_value = False
+
+        denied_dir = MagicMock()
+        denied_dir.is_dir.return_value = True
+        denied_dir.iterdir.side_effect = PermissionError(13, 'Access is denied')
+
+        with TemporaryDirectory() as tmp:
+            ext_dir = Path(tmp)
+            (ext_dir / 'anthropic.claude-code-2.1.69-win32-x64').mkdir()
+            with patch('usage_monitor_for_claude.claude_cli._EXTENSION_DIRS', [('VS Code', denied_dir), ('Cursor', ext_dir)]):
+                result = find_installations()
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].name, 'Cursor')
+
     @patch('usage_monitor_for_claude.claude_cli.cli_version', return_value='2.1.69')
     @patch('usage_monitor_for_claude.claude_cli.CLAUDE_CLI_PATH')
     def test_cli_and_extensions_combined(self, mock_cli_path, _mock_version):

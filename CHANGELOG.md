@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A credentials file with an unexpected structure (e.g. `claudeAiOauth` left empty by a logout, or a file rewritten by another tool) no longer crashes the app and kills polling until restart - it is treated as "no token available right now"
 - A profile response with an empty account or organization section no longer crashes the poll loop or the popup
 - Configuring `tooltip_fields` or `icon_fields` with a response key that is not a quota field (e.g. `limits`) no longer freezes the tray on stale data - the entry is skipped in the tooltip and rendered as 0% in the icon
+- An IDE extensions folder that exists but cannot be read (permission denied, broken junction) no longer breaks the popup or its live updates - the folder is skipped in the Claude Code version list
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)
 

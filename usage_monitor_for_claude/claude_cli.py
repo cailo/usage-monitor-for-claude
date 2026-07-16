@@ -113,25 +113,30 @@ def find_installations() -> list[ClaudeInstallation]:
 
     # IDE extensions - extract version from directory name
     for ide_name, ext_dir in _EXTENSION_DIRS:
-        if not ext_dir.is_dir():
-            continue
-
-        best_version = ''
-        best_parts: tuple[int, ...] = ()
-        best_path = None
-        for entry in ext_dir.iterdir():
-            if not entry.name.startswith(_EXTENSION_PREFIX):
+        try:
+            if not ext_dir.is_dir():
                 continue
-            # Directory name format: anthropic.claude-code-X.Y.Z-win32-x64
-            remainder = entry.name[len(_EXTENSION_PREFIX):]
-            match = re.match(r'(\d+\.\d+\.\d+)', remainder)
-            if match:
-                version = match.group(1)
-                parts = tuple(int(x) for x in version.split('.'))
-                if parts > best_parts:
-                    best_version = version
-                    best_parts = parts
-                    best_path = entry
+
+            best_version = ''
+            best_parts: tuple[int, ...] = ()
+            best_path = None
+            for entry in ext_dir.iterdir():
+                if not entry.name.startswith(_EXTENSION_PREFIX):
+                    continue
+                # Directory name format: anthropic.claude-code-X.Y.Z-win32-x64
+                remainder = entry.name[len(_EXTENSION_PREFIX):]
+                match = re.match(r'(\d+\.\d+\.\d+)', remainder)
+                if match:
+                    version = match.group(1)
+                    parts = tuple(int(x) for x in version.split('.'))
+                    if parts > best_parts:
+                        best_version = version
+                        best_parts = parts
+                        best_path = entry
+        except OSError:
+            # A directory that exists but cannot be enumerated (ACL denial,
+            # broken junction, cloud placeholder) must not break the popup.
+            continue
 
         if best_version and best_path:
             results.append(ClaudeInstallation(ide_name, best_version, best_path))
