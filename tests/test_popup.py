@@ -658,6 +658,7 @@ class TestPinState(unittest.TestCase):
         popup._dragging = True
         popup._drag_start_dpi = 96
         popup._last_height = 500
+        popup._geometry_lock = threading.Lock()
         popup._window = MagicMock()
 
         with patch('ctypes.windll.user32.GetDpiForWindow', return_value=144):
@@ -756,6 +757,68 @@ class TestReportHeight(unittest.TestCase):
 
         popup._resize_and_position.assert_not_called()
         popup._show_window.assert_not_called()
+
+    def test_stale_height_report_cannot_overwrite_newer_resize(self):
+        """pywebview dispatches each bridge call on a fresh thread; two rapid
+        height reports must not interleave so that the earlier resize is
+        applied after (and overwrites) the later one."""
+        popup, api = self._build_popup()
+
+        first_entered = threading.Event()
+        release_first = threading.Event()
+        applied = []
+
+        def resize(height):
+            if height == 400:
+                first_entered.set()
+                release_first.wait(2)
+            applied.append(height)
+
+        popup._resize_and_position = MagicMock(side_effect=resize)
+
+        first = threading.Thread(target=lambda: api.report_height(400), daemon=True)
+        first.start()
+        self.assertTrue(first_entered.wait(2))
+
+        second = threading.Thread(target=lambda: api.report_height(523), daemon=True)
+        second.start()
+        time.sleep(0.1)
+        release_first.set()
+        first.join(2)
+        second.join(2)
+
+        # The window size (last applied resize) must match the tracked height.
+        self.assertEqual(applied[-1], popup._last_height)
+
+    def test_concurrent_first_reports_start_show_only_once(self):
+        """Two pre-show reports racing each other must not both run _show_window
+        (which would start two update-push loops for one popup)."""
+        popup, api = self._build_popup()
+
+        show_entered = threading.Event()
+        release_show = threading.Event()
+        show_calls = []
+
+        def show():
+            show_calls.append(1)
+            show_entered.set()
+            release_show.wait(2)
+            popup._shown = True
+
+        popup._show_window = MagicMock(side_effect=show)
+
+        first = threading.Thread(target=lambda: api.report_height(400), daemon=True)
+        first.start()
+        self.assertTrue(show_entered.wait(2))
+
+        second = threading.Thread(target=lambda: api.report_height(523), daemon=True)
+        second.start()
+        time.sleep(0.1)
+        release_show.set()
+        first.join(2)
+        second.join(2)
+
+        self.assertEqual(len(show_calls), 1)
 
 
 # ---------------------------------------------------------------------------

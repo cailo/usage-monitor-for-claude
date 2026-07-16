@@ -214,12 +214,24 @@ class _PopupApi:
         self._popup._end_drag()
 
     def report_height(self, height: int) -> None:
-        """Called by JS ResizeObserver when content height changes."""
-        if height and height != self._popup._last_height:
-            self._popup._last_height = height
-            self._popup._resize_and_position(height)
-            if not self._popup._shown:
-                self._popup._show_window()
+        """Called by JS ResizeObserver when content height changes.
+
+        pywebview dispatches every bridge call on a fresh thread, so two
+        rapid reports could interleave and apply the earlier resize after
+        the later one, or both start the show path.  The geometry lock
+        serializes the whole check-resize-show sequence.
+        """
+        if not height:
+            return
+
+        popup = self._popup
+        with popup._geometry_lock:
+            if height == popup._last_height:
+                return
+            popup._last_height = height
+            popup._resize_and_position(height)
+            if not popup._shown:
+                popup._show_window()
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +265,9 @@ class UsagePopup:
         self._closed = threading.Event()
         self._popup_hwnd = 0
         self._pump_tid = 0
+        # Serializes the resize/show geometry path across pywebview's
+        # per-call bridge threads.
+        self._geometry_lock = threading.Lock()
         initial_height = 400
         # 0 means "no height reported yet": the first ResizeObserver report
         # must always count as a change so the window gets resized,
@@ -516,7 +531,8 @@ class UsagePopup:
 
         current_dpi = ctypes.windll.user32.GetDpiForWindow(self._popup_hwnd) or ctypes.windll.user32.GetDpiForSystem()
         if current_dpi != self._drag_start_dpi:
-            self._window.resize(self.WIDTH, self._last_height)
+            with self._geometry_lock:
+                self._window.resize(self.WIDTH, self._last_height)
 
     def _update_loop(self) -> None:
         """Poll for data changes and push updates to the popup."""
