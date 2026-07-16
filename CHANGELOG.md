@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An IDE extensions folder that exists but cannot be read (permission denied, broken junction) no longer breaks the popup or its live updates - the folder is skipped in the Claude Code version list
 - Confirming the "already running" dialog after the old instance already exited on its own can no longer terminate an unrelated process that happened to receive the same process ID
 - A settings file saved as UTF-8 with BOM (the default of older PowerShell and Notepad versions) is now accepted instead of being rejected with an "Invalid JSON" error that discarded all settings
+- Notifications deferred while you were away can no longer stay stuck in the queue for hours (or get lost to a rare crash) when you return at just the wrong moment - they now appear promptly once you are back
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)
 

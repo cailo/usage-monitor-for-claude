@@ -2413,6 +2413,42 @@ class TestPollLoopAccountSwitch(unittest.TestCase):
         _cleanup(self.app)
 
     @patch('usage_monitor_for_claude.app.time.sleep')
+    @patch('usage_monitor_for_claude.app.time.time', return_value=1000.0)
+    def test_deferred_notifications_flushed_when_user_present(self, _mock_time, _mock_sleep):
+        """Notifications deferred while away are shown once the user is present,
+        even when the poll loop's away branch is never entered (the user
+        returned in the gap between the deferral and the next away check)."""
+        self.app._deferred_notifications = {'reset': ('msg', 'title')}
+
+        def is_away():
+            self.app.running = False
+            return False
+
+        with patch.object(self.app, 'update'), \
+             patch.object(self.app, '_calculate_poll_interval', return_value=180), \
+             patch.object(self.app, '_is_user_away', side_effect=is_away), \
+             patch.object(self.app, '_seconds_until_next_reset', return_value=None):
+            self.app.poll_loop()
+
+        self.app.icon.notify.assert_called_once_with('msg', 'title')
+        self.assertEqual(self.app._deferred_notifications, {})
+
+    def test_flush_tolerates_concurrent_deferral(self):
+        """A deferral landing while the queue is being flushed (popup thread vs
+        poll thread) must neither crash the flush nor get lost."""
+        self.app._deferred_notifications = {'a': ('m1', 't1'), 'b': ('m2', 't2')}
+
+        def add_during_notify(*_args):
+            self.app._deferred_notifications['c'] = ('m3', 't3')
+
+        self.app.icon.notify.side_effect = add_during_notify
+
+        self.app._flush_deferred_notifications()
+
+        self.assertEqual(self.app.icon.notify.call_count, 2)
+        self.assertEqual(self.app._deferred_notifications, {'c': ('m3', 't3')})
+
+    @patch('usage_monitor_for_claude.app.time.sleep')
     @patch('usage_monitor_for_claude.app.time.time', return_value=100.0)
     def test_token_change_to_other_account_forces_update(self, _mock_time, _mock_sleep):
         """A token change confirmed as a different account triggers a forced update."""

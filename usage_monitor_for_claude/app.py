@@ -121,6 +121,9 @@ class UsageMonitorForClaude:
         # Adaptive polling state
         self._fast_polls_remaining = 0
         self._idle_reset_pending = False
+        # Guarded by _notify_lock: deferrals arrive from the popup and poll
+        # threads while the poll loop flushes.
+        self._notify_lock = threading.Lock()
         self._deferred_notifications: dict[str, tuple[str, str]] = {}
 
         # Popup state
@@ -543,15 +546,22 @@ class UsageMonitorForClaude:
             Notification title.
         """
         if self._is_user_away():
-            self._deferred_notifications[category] = (message, title)
+            with self._notify_lock:
+                self._deferred_notifications[category] = (message, title)
         else:
             self.icon.notify(message, title)
 
     def _flush_deferred_notifications(self) -> None:
-        """Show all deferred notifications and clear the queue."""
-        for message, title in self._deferred_notifications.values():
+        """Show all deferred notifications and clear the queue.
+
+        The queue is swapped out under the lock so a deferral landing
+        mid-flush (from the popup thread) is kept for the next flush
+        instead of mutating the dict being iterated.
+        """
+        with self._notify_lock:
+            pending, self._deferred_notifications = self._deferred_notifications, {}
+        for message, title in pending.values():
             self.icon.notify(message, title)
-        self._deferred_notifications.clear()
 
     def _check_threshold_alerts(self, data: dict[str, Any]) -> None:
         """Show a notification when usage crosses a configured threshold.
@@ -914,6 +924,13 @@ class UsageMonitorForClaude:
                             new_target = aligned
                     target = new_target
                     self._next_poll_time = target
+
+                # Show notifications deferred while the user was away as soon
+                # as they are present, even when the away branch below is
+                # never entered (the user returned in the short gap between a
+                # deferral and this loop's next away check).
+                if self._deferred_notifications and not self._is_user_away():
+                    self._flush_deferred_notifications()
 
                 # Pause polling while the user is away.
                 # Regular polling stops entirely during idle/lock.
