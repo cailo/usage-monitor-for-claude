@@ -42,6 +42,24 @@ class TestRedactHome(unittest.TestCase):
         """Empty string is returned unchanged."""
         self.assertEqual(_redact_home(''), '')
 
+    def test_case_insensitive_match(self):
+        """Windows paths are case-insensitive - a differently-cased home prefix
+        (e.g. CLAUDE_CONFIG_DIR set as c:\\users\\...) must still be redacted."""
+        home = str(__import__('pathlib').Path.home())
+        self.assertEqual(_redact_home(f'{home.swapcase()}\\.claude\\file'), '~\\.claude\\file')
+
+    def test_prefix_boundary_not_partially_redacted(self):
+        """A sibling profile whose name merely starts with the username
+        (C:\\Users\\jens vs C:\\Users\\jensen) must not be partially redacted."""
+        home = str(__import__('pathlib').Path.home())
+        sibling = f'{home}en\\file.txt'
+        self.assertEqual(_redact_home(sibling), sibling)
+
+    def test_exact_home_path_redacted(self):
+        """The home directory itself is redacted to ~."""
+        home = str(__import__('pathlib').Path.home())
+        self.assertEqual(_redact_home(home), '~')
+
 
 class TestSection(unittest.TestCase):
     """Tests for _section() header formatting."""

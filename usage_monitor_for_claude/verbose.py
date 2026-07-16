@@ -150,10 +150,22 @@ def _screen_info() -> tuple[str, str, str]:
 
 
 def _redact_home(path_str: str) -> str:
-    """Replace the user's home directory with ``~`` to avoid exposing the username."""
+    """Replace the user's home directory with ``~`` to avoid exposing the username.
+
+    Case-insensitive (Windows paths compare that way, and e.g. a
+    ``CLAUDE_CONFIG_DIR`` set externally may be differently cased) and
+    boundary-aware, so a sibling profile whose name merely starts with the
+    username is not partially redacted.
+    """
     home = str(Path.home())
-    if path_str.startswith(home):
+    normalized_path = os.path.normcase(path_str)
+    normalized_home = os.path.normcase(home)
+
+    if normalized_path == normalized_home:
+        return '~'
+    if normalized_path.startswith(normalized_home + os.sep):
         return '~' + path_str[len(home):]
+
     return path_str
 
 

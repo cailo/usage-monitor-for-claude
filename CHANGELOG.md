@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A tray bar in `overage` mode no longer flips to a plain utilization fill in the short window between a quota reset and the confirming poll - it keeps its overage reading (empty while within budget)
 - A `currency_symbol` override that happens to match the system's currency symbol now works - previously it was silently ignored and the billing currency reported by the API won; an empty override now consistently means "no symbol"
 - On a weekly usage bar spanning a daylight-saving changeover, the day dividers after the changeover now stay on the actual local midnights instead of drifting by one hour
+- The `--verbose` diagnostics now redact the Windows username from paths reliably - previously a differently-cased path (e.g. a lowercase `CLAUDE_CONFIG_DIR`) slipped through unredacted, and a neighboring user profile could be partially mangled
 - [Notification icon](https://github.com/jens-duttke/usage-monitor-for-claude/issues/67) - alerts and reset notifications now show the app logo instead of the current tray icon, so the icon no longer says "you have nothing left" when a limit was just reset or is only partway used
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)
