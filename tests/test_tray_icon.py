@@ -12,6 +12,41 @@ from unittest.mock import MagicMock, call, patch
 import usage_monitor_for_claude.tray_icon as tray_icon_mod
 
 
+class TestWatchThemeChange(unittest.TestCase):
+    """Tests for watch_theme_change() - the registry-based theme watcher."""
+
+    @patch('ctypes.windll.advapi32.RegNotifyChangeKeyValue')
+    @patch.object(tray_icon_mod, 'winreg')
+    def test_callback_exception_does_not_end_watcher(self, mock_winreg, mock_notify):
+        """A transient callback failure (e.g. re-render error during an Explorer
+        restart) must not end theme watching for the rest of the session."""
+        mock_winreg.OpenKey.return_value.__enter__.return_value = 1234
+        mock_notify.side_effect = [0, 0, 1]  # two theme changes, then watcher exit
+
+        calls = []
+
+        def callback():
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError('transient render failure')
+
+        tray_icon_mod.watch_theme_change(callback)
+
+        self.assertEqual(len(calls), 2)
+
+    @patch('ctypes.windll.advapi32.RegNotifyChangeKeyValue')
+    @patch.object(tray_icon_mod, 'winreg')
+    def test_watcher_exits_when_notify_fails(self, mock_winreg, mock_notify):
+        """A failing RegNotifyChangeKeyValue ends the watcher without callbacks."""
+        mock_winreg.OpenKey.return_value.__enter__.return_value = 1234
+        mock_notify.return_value = 1
+
+        callback = MagicMock()
+        tray_icon_mod.watch_theme_change(callback)
+
+        callback.assert_not_called()
+
+
 class TestLoadFont(unittest.TestCase):
     """Tests for load_font()."""
 

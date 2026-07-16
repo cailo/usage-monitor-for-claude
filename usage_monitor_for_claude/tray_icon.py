@@ -73,7 +73,13 @@ def watch_theme_change(callback: Callable[[], None]) -> None:
         while True:
             if ctypes.windll.advapi32.RegNotifyChangeKeyValue(int(key), False, REG_NOTIFY_CHANGE_LAST_SET, None, False) != 0:
                 return
-            callback()
+            try:
+                callback()
+            except Exception:
+                # A transient callback failure (icon re-render, Shell_NotifyIcon
+                # during an Explorer restart) must not end theme watching for
+                # the rest of the session.
+                pass
 
 
 def create_icon_image(
