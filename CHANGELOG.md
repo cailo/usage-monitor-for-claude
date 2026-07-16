@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two content-height changes arriving in quick succession (e.g. toggling the compact view right as a data update lands) can no longer leave the popup clipped or oversized until the next content change
 - When the set of quota bars changes while the popup is open but their number stays the same (e.g. an account switch between two plans), the bars now rebuild with the correct labels instead of showing the new values under the old quota names
 - The tray icon shows "99" instead of a clipped, three-digit "100" while utilization is between 99.5% and 100% - "100" stays reserved for the actually-exhausted state
+- A tray bar in `overage` mode no longer flips to a plain utilization fill in the short window between a quota reset and the confirming poll - it keeps its overage reading (empty while within budget)
 - [Notification icon](https://github.com/jens-duttke/usage-monitor-for-claude/issues/67) - alerts and reset notifications now show the app logo instead of the current tray icon, so the icon no longer says "you have nothing left" when a limit was just reset or is only partway used
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)

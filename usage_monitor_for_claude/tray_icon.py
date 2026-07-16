@@ -165,7 +165,16 @@ def _draw_usage_bar(draw: ImageDraw.ImageDraw, y: int, pct: float, mode: str, ti
     """
     draw.rectangle([0, y, ICON_SIZE - 1, y + BAR_HEIGHT - 1], fill=fg_half)
 
-    if mode == 'overage' and time_pct is not None and time_pct < 100:
+    if mode == 'overage' and time_pct is not None:
+        if time_pct >= 100:
+            # End state for a stale window (elapsed time clamped to 100%,
+            # e.g. between a reset and the confirming poll): usage below the
+            # limit stayed within budget (empty bar), an exhausted quota
+            # keeps the bar full - never the linear utilization fill.
+            if pct >= 100:
+                draw.rectangle([0, y, ICON_SIZE - 1, y + BAR_HEIGHT - 1], fill=fg)
+            return
+
         overage = max(0.0, pct - time_pct)
         fill_ratio = min(1.0, overage / (100 - time_pct))
         fill_w = max(0, int(ICON_SIZE * fill_ratio))

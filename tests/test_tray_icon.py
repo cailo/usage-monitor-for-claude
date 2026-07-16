@@ -9,6 +9,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, call, patch
 
+from PIL import Image, ImageDraw
+
 import usage_monitor_for_claude.tray_icon as tray_icon_mod
 
 
@@ -45,6 +47,39 @@ class TestWatchThemeChange(unittest.TestCase):
         tray_icon_mod.watch_theme_change(callback)
 
         callback.assert_not_called()
+
+
+class TestOverageBarEndState(unittest.TestCase):
+    """Tests for the overage bar when the elapsed time is clamped to 100%."""
+
+    _FG = (255, 255, 255, 255)
+    _FG_HALF = (255, 255, 255, 80)
+    _FG_WARN = (224, 80, 80, 255)
+
+    def _draw_bar(self, pct, time_pct):
+        img = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        tray_icon_mod._draw_usage_bar(draw, 0, pct, 'overage', time_pct, self._FG, self._FG_HALF, self._FG_WARN)
+        return img
+
+    def test_stale_window_below_limit_shows_empty_bar(self):
+        """With a stale resets_at the elapsed time clamps to 100%; usage below the
+        limit must keep the overage reading (empty bar) instead of jumping to a
+        linear utilization fill until the confirming poll arrives."""
+        img = self._draw_bar(80.0, 100.0)
+        self.assertEqual(img.getpixel((32, 4)), self._FG_HALF)
+
+    def test_stale_window_exhausted_shows_full_bar(self):
+        """An exhausted quota keeps a full bar in the stale-window end state."""
+        img = self._draw_bar(100.0, 100.0)
+        self.assertEqual(img.getpixel((32, 4)), self._FG)
+
+    def test_active_window_overage_fill_unchanged(self):
+        """The regular overage fill (time_pct < 100) is unaffected."""
+        # 75% used at 50% elapsed: overage 25 of remaining 50 -> half filled.
+        img = self._draw_bar(75.0, 50.0)
+        self.assertEqual(img.getpixel((16, 4)), self._FG)
+        self.assertEqual(img.getpixel((48, 4)), self._FG_HALF)
 
 
 class TestIconGlyphNearExhaustion(unittest.TestCase):
@@ -366,12 +401,14 @@ class TestCreateIconImageOverageMode(unittest.TestCase):
         self.assertEqual(img.size, (64, 64))
         self.assertEqual(img.mode, 'RGBA')
 
-    def test_overage_mode_time_pct_at_100_falls_back_to_utilization(self):
-        """time_pct=100 (period over) falls back to normal utilization display."""
-        img_fallback = tray_icon_mod.create_icon_image(50, 50, mode_top='overage', mode_bottom='overage', time_pct_top=100, time_pct_bottom=100)
-        img_util = tray_icon_mod.create_icon_image(50, 50)
+    def test_overage_mode_time_pct_at_100_keeps_overage_reading(self):
+        """time_pct=100 (stale window right after a reset) keeps the overage
+        reading - usage below the limit stays an empty bar instead of jumping
+        to the linear utilization fill until the confirming poll arrives."""
+        img_end_state = tray_icon_mod.create_icon_image(50, 50, mode_top='overage', mode_bottom='overage', time_pct_top=100, time_pct_bottom=100)
+        img_on_pace = tray_icon_mod.create_icon_image(50, 50, mode_top='overage', mode_bottom='overage', time_pct_top=50, time_pct_bottom=50)
 
-        self.assertEqual(img_fallback.tobytes(), img_util.tobytes())
+        self.assertEqual(img_end_state.tobytes(), img_on_pace.tobytes())
 
     def test_on_pace_produces_empty_bar(self):
         """Usage exactly at time_pct means on pace - bar pixels are not fully opaque (no fill)."""
