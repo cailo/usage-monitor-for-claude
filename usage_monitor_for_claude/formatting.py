@@ -346,22 +346,23 @@ def time_until(iso_str: str, clock_24h: bool | None = None) -> str:
 def _target_currency_symbol(currency: str | None) -> str:
     """Return the symbol to display for a currency amount.
 
-    Precedence: an explicit ``currency_symbol`` user override, then the
-    billing currency reported by the API (its known symbol, or the ISO code
-    itself as a fallback), then the system locale symbol.
+    Precedence: an explicit ``currency_symbol`` user override (``None``
+    means unset; an empty override means "no symbol"), then the billing
+    currency reported by the API (its known symbol, or the ISO code itself
+    as a fallback), then the system locale symbol.
 
     Parameters
     ----------
     currency : str or None
         ISO 4217 currency code from the API (e.g. ``'EUR'``), or None.
     """
-    if CURRENCY_SYMBOL != _SYSTEM_CURRENCY_SYMBOL:
+    if CURRENCY_SYMBOL is not None:
         return CURRENCY_SYMBOL
 
     if currency:
         return _CURRENCY_SYMBOLS.get(currency.upper(), currency.upper())
 
-    return CURRENCY_SYMBOL
+    return _SYSTEM_CURRENCY_SYMBOL
 
 
 def format_credits(minor_units: float, currency: str | None = None, decimal_places: int | None = None) -> str:
@@ -390,8 +391,10 @@ def format_credits(minor_units: float, currency: str | None = None, decimal_plac
     try:
         formatted = _locale.currency(amount, grouping=True)
 
-        if symbol and symbol != _SYSTEM_CURRENCY_SYMBOL and _SYSTEM_CURRENCY_SYMBOL:
-            formatted = formatted.replace(_SYSTEM_CURRENCY_SYMBOL, symbol)
+        # An empty symbol (explicit "no symbol" override) removes the system
+        # symbol instead of leaving it in place.
+        if symbol != _SYSTEM_CURRENCY_SYMBOL and _SYSTEM_CURRENCY_SYMBOL:
+            formatted = formatted.replace(_SYSTEM_CURRENCY_SYMBOL, symbol).strip()
 
         return formatted
     except (ValueError, _locale.Error):

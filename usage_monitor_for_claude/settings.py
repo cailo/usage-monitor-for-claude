@@ -331,7 +331,10 @@ def _detect_currency_symbol() -> str:
 
 
 _SYSTEM_CURRENCY_SYMBOL = _detect_currency_symbol()
-CURRENCY_SYMBOL: str = _S.get('currency_symbol', _SYSTEM_CURRENCY_SYMBOL)
+# None when the user set no override: presence must be explicit, because an
+# override that happens to equal the system symbol still has to win over the
+# API billing currency.
+CURRENCY_SYMBOL: str | None = _S.get('currency_symbol')
 
 # Language override
 LANGUAGE: str = _S.get('language', '')
