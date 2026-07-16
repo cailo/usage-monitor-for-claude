@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An account switch is no longer missed for the rest of the session when the profile request fails once around the switch - previously that also suppressed the "account switched" notification and could fire a false "quota reset" notification and reset command instead
 - Opening the popup roughly 3 to 5 minutes before a quota reset no longer delays the reset-confirming poll - the tray and the "quota reset" notification/command now react a few seconds after the reset instead of up to two minutes late
 - On Chinese, Hindi, and Indonesian Windows systems the app now starts in the system language instead of silently falling back to English (the shipped zh-CN, zh-TW, hi, and id translations were never picked up by the automatic language detection)
+- A credentials file with an unexpected structure (e.g. `claudeAiOauth` left empty by a logout, or a file rewritten by another tool) no longer crashes the app and kills polling until restart - it is treated as "no token available right now"
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)
 

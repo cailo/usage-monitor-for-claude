@@ -133,6 +133,31 @@ class TestReadAccessToken(unittest.TestCase):
                  patch.object(Path, 'read_text', side_effect=PermissionError('locked')):
                 self.assertIsNone(read_access_token())
 
+    def test_null_oauth_value_returns_none(self):
+        """A claudeAiOauth key holding JSON null (e.g. after a logout) returns None instead of raising."""
+        with TemporaryDirectory() as tmp:
+            creds_file = Path(tmp) / 'creds.json'
+            creds_file.write_text('{"claudeAiOauth": null}')
+            with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file):
+                self.assertIsNone(read_access_token())
+
+    def test_non_object_top_level_returns_none(self):
+        """Valid JSON with a non-object top level (list, string, number) returns None instead of raising."""
+        for content in ('[]', '"token"', '42', 'null'):
+            with self.subTest(content=content), TemporaryDirectory() as tmp:
+                creds_file = Path(tmp) / 'creds.json'
+                creds_file.write_text(content)
+                with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file):
+                    self.assertIsNone(read_access_token())
+
+    def test_non_dict_oauth_value_returns_none(self):
+        """A claudeAiOauth key holding a non-object value returns None instead of raising."""
+        with TemporaryDirectory() as tmp:
+            creds_file = Path(tmp) / 'creds.json'
+            creds_file.write_text('{"claudeAiOauth": "sk-test-123"}')
+            with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file):
+                self.assertIsNone(read_access_token())
+
 
 # ---------------------------------------------------------------------------
 # fetch_usage
