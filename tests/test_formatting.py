@@ -505,6 +505,36 @@ class TestDividerPositions(unittest.TestCase):
         for pos in result:
             self.assertGreater(pos, 0.003)
 
+    def _assert_dividers_on_local_midnights(self, reset_iso: str):
+        """Every 7-day divider must land on a real local midnight - also when a
+        DST changeover falls inside the period (the section lengths then differ,
+        but each boundary is still a true midnight)."""
+        positions = divider_positions(reset_iso, PERIOD_7D)
+        self.assertEqual(len(positions), 7)
+
+        start_utc = datetime.fromisoformat(reset_iso) - timedelta(seconds=PERIOD_7D)
+        for rel in positions:
+            local = (start_utc + timedelta(seconds=round(rel * PERIOD_7D))).astimezone()
+            self.assertEqual(
+                (local.hour, local.minute, local.second), (0, 0, 0),
+                f'divider at {local.isoformat()} is not a local midnight',
+            )
+
+    def test_dividers_stay_on_midnights_across_autumn_dst(self):
+        """A week spanning the late-October changeover (EU zones) keeps every
+        divider on a local midnight instead of drifting by the DST shift."""
+        self._assert_dividers_on_local_midnights('2026-10-28T11:00:00+00:00')
+
+    def test_dividers_stay_on_midnights_across_early_november_dst(self):
+        """A week spanning the early-November changeover (US zones) keeps every
+        divider on a local midnight instead of drifting by the DST shift."""
+        self._assert_dividers_on_local_midnights('2026-11-04T11:00:00+00:00')
+
+    def test_dividers_stay_on_midnights_across_spring_dst(self):
+        """A week spanning the late-March changeover (EU zones) keeps every
+        divider on a local midnight instead of drifting by the DST shift."""
+        self._assert_dividers_on_local_midnights('2027-03-31T11:00:00+00:00')
+
     def test_7d_first_position_approximately_correct(self):
         """First midnight in a 7d period starting at noon is at roughly 1/14 of the bar."""
         # Period: Jan 15 12:00 to Jan 22 12:00 local. First midnight is 12h into 168h = 1/14

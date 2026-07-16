@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The tray icon shows "99" instead of a clipped, three-digit "100" while utilization is between 99.5% and 100% - "100" stays reserved for the actually-exhausted state
 - A tray bar in `overage` mode no longer flips to a plain utilization fill in the short window between a quota reset and the confirming poll - it keeps its overage reading (empty while within budget)
 - A `currency_symbol` override that happens to match the system's currency symbol now works - previously it was silently ignored and the billing currency reported by the API won; an empty override now consistently means "no symbol"
+- On a weekly usage bar spanning a daylight-saving changeover, the day dividers after the changeover now stay on the actual local midnights instead of drifting by one hour
 - [Notification icon](https://github.com/jens-duttke/usage-monitor-for-claude/issues/67) - alerts and reset notifications now show the app logo instead of the current tray icon, so the icon no longer says "you have nothing left" when a limit was just reset or is only partway used
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)

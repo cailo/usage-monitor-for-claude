@@ -261,16 +261,22 @@ def divider_positions(resets_at: str, period_seconds: int) -> list[float]:
         start_local = start_utc.astimezone()
         end_local = reset_utc.astimezone()
 
-        # First midnight after the period start
-        midnight = (start_local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        # Walk local calendar days and convert each naive midnight separately:
+        # astimezone() re-evaluates the UTC offset per date, so a DST
+        # changeover inside the period keeps every divider on a true local
+        # midnight (adding timedeltas would carry the period-start offset).
+        day = start_local.date() + timedelta(days=1)
 
         positions = []
-        while midnight < end_local:
+        while True:
+            midnight = datetime(day.year, day.month, day.day).astimezone()
+            if midnight >= end_local:
+                break
             elapsed = (midnight - start_local).total_seconds()
             rel = elapsed / period_seconds
             if rel > 0.003:
                 positions.append(rel)
-            midnight += timedelta(days=1)
+            day += timedelta(days=1)
 
         return positions
     except Exception:
