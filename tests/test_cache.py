@@ -519,7 +519,7 @@ class TestTokenRefresh(unittest.TestCase):
         """When the token is unchanged and refresh_token() fails, returns None."""
         mock_refresh.return_value = RefreshResult(success=False, updated=False, old_version='', new_version='', error='CLI not found')
         cache = _make_cache()
-        self.assertIsNone(cache._try_token_refresh('old-token'))
+        self.assertEqual(cache._try_token_refresh('old-token'), (None, None))
 
     @patch('usage_monitor_for_claude.cache.fetch_usage', return_value=_SUCCESS_DATA)
     @patch('usage_monitor_for_claude.cache.read_access_token', side_effect=['old-token', 'new-token'])
@@ -529,10 +529,11 @@ class TestTokenRefresh(unittest.TestCase):
         mock_refresh.return_value = RefreshResult(success=True, updated=False, old_version='2.1.69', new_version='2.1.69', error='')
         cache = _make_cache()
 
-        result = cache._try_token_refresh('old-token')
+        result, retry_data = cache._try_token_refresh('old-token')
 
         assert result is not None
         self.assertTrue(result.success)
+        self.assertEqual(retry_data, _SUCCESS_DATA)
         self.assertEqual(cache.usage, _SUCCESS_DATA)
         self.assertIsNone(cache.last_error)
         self.assertEqual(cache.consecutive_errors, 0)
@@ -544,7 +545,7 @@ class TestTokenRefresh(unittest.TestCase):
         """When the credentials already hold a different token (account switch), retry directly without claude update."""
         cache = _make_cache()
 
-        result = cache._try_token_refresh('old-token')
+        result, _retry_data = cache._try_token_refresh('old-token')
 
         mock_refresh.assert_not_called()
         mock_fetch.assert_called_once()
@@ -579,7 +580,7 @@ class TestTokenRefresh(unittest.TestCase):
         mock_refresh.return_value = RefreshResult(success=True, updated=False, old_version='2.1.69', new_version='2.1.69', error='')
         cache = _make_cache()
 
-        self.assertIsNone(cache._try_token_refresh('same-token'))
+        self.assertEqual(cache._try_token_refresh('same-token'), (None, None))
 
     @patch('usage_monitor_for_claude.cache.fetch_usage', return_value=_SUCCESS_DATA)
     @patch('usage_monitor_for_claude.cache.read_access_token', return_value='same-token')
@@ -601,9 +602,10 @@ class TestTokenRefresh(unittest.TestCase):
         mock_refresh.return_value = RefreshResult(success=True, updated=False, old_version='2.1.69', new_version='2.1.69', error='')
         cache = _make_cache()
 
-        result = cache._try_token_refresh('old-token')
+        result, retry_data = cache._try_token_refresh('old-token')
         assert result is not None
         self.assertTrue(result.success)
+        self.assertEqual(retry_data, _AUTH_ERROR_DATA)
         self.assertEqual(cache.last_error, 'expired')
         # _try_token_refresh does not increment _consecutive_errors (caller already did)
         self.assertEqual(cache.consecutive_errors, 0)
@@ -655,20 +657,46 @@ class TestTokenRefresh(unittest.TestCase):
     @patch('usage_monitor_for_claude.cache.fetch_usage')
     @patch('usage_monitor_for_claude.cache.read_access_token', side_effect=['old-token', 'old-token', 'new-token'])
     @patch('usage_monitor_for_claude.cache.refresh_token')
-    def test_refresh_success_retry_fail_returns_error_data(self, mock_refresh, _mock_token, mock_fetch):
-        """Auth error + successful refresh + failed retry returns original error data.
+    def test_refresh_success_retry_fail_returns_retry_data(self, mock_refresh, _mock_token, mock_fetch):
+        """Auth error + successful refresh + failed retry returns the retry's error
+        data, so the caller reacts to the current failure, not the repaired 401.
 
         read_access_token calls: (1) token_before in _fetch_and_process,
         (2) unchanged-token check and (3) post-refresh comparison in
         _try_token_refresh.
         """
         mock_refresh.return_value = RefreshResult(success=True, updated=True, old_version='2.1.38', new_version='2.1.69', error='')
-        mock_fetch.side_effect = [_AUTH_ERROR_DATA, {'error': 'still broken', 'auth_error': True}]
+        retry_error = {'error': 'still broken', 'auth_error': True}
+        mock_fetch.side_effect = [_AUTH_ERROR_DATA, retry_error]
         cache = _make_cache()
 
         result = cache.update()
 
-        self.assertEqual(result.data, _AUTH_ERROR_DATA)
+        self.assertEqual(result.data, retry_error)
+        assert result.token_refresh is not None
+
+    @patch('usage_monitor_for_claude.cache.time.time', return_value=1000.0)
+    @patch('usage_monitor_for_claude.cache.fetch_usage')
+    @patch('usage_monitor_for_claude.cache.read_access_token', side_effect=['old-token', 'old-token', 'new-token'])
+    @patch('usage_monitor_for_claude.cache.refresh_token')
+    def test_rate_limited_retry_arms_backoff(self, mock_refresh, _mock_token, mock_fetch, _mock_time):
+        """A 429 on the post-refresh retry must arm the rate-limit backoff and be
+        reported to the caller, instead of re-polling an already limited endpoint
+        at the error cadence while showing the stale 401 state.
+
+        read_access_token calls: (1) token_before in _fetch_and_process,
+        (2) unchanged-token check and (3) post-refresh comparison in
+        _try_token_refresh.
+        """
+        mock_refresh.return_value = RefreshResult(success=True, updated=True, old_version='2.1.38', new_version='2.1.69', error='')
+        mock_fetch.side_effect = [_AUTH_ERROR_DATA, {'error': 'HTTP 429', 'rate_limited': True, 'retry_after': 300}]
+        cache = _make_cache()
+
+        result = cache.update()
+
+        self.assertGreater(cache.rate_limit_remaining, 0)
+        assert result.data is not None
+        self.assertTrue(result.data.get('rate_limited'))
         assert result.token_refresh is not None
         self.assertTrue(result.token_refresh.updated)
         self.assertIsNotNone(cache.last_error)

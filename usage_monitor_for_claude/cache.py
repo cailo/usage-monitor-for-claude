@@ -238,24 +238,23 @@ class UsageCache:
             self._record_error(data)
 
             if data.get('rate_limited'):
-                retry_after = data.get('retry_after')
-                if retry_after is not None and retry_after > 0:
-                    delay = min(max(retry_after, POLL_INTERVAL), MAX_BACKOFF)
-                else:
-                    delay = min(POLL_INTERVAL * (2 ** max(self._consecutive_errors - 1, 0)), MAX_BACKOFF)
-                self._rate_limit_until = time.time() + delay
-                log.warning('fetch_usage -> rate limited, backoff %.0fs', delay)
+                self._apply_rate_limit_backoff(data)
 
             token_refresh = None
             if data.get('auth_error'):
                 log.warning('fetch_usage -> auth error, attempting token refresh')
-                token_refresh = self._try_token_refresh(token_before)
+                token_refresh, retry_data = self._try_token_refresh(token_before)
                 if token_refresh is not None and self._last_error is None:
                     # Token refresh succeeded and retry was successful
                     return UpdateResult(data=self._usage, token_refresh=token_refresh)
                 if token_refresh is None:
                     # Refresh failed or token unchanged - block this token
                     self._last_failed_token = token_before
+                if retry_data is not None:
+                    # Report the retry's failure, not the repaired 401, so the
+                    # caller reacts to the current state (e.g. a 429 backoff
+                    # instead of a stale credentials error).
+                    data = retry_data
             elif not data.get('rate_limited'):
                 log.warning('fetch_usage -> error: %s', data['error'])
 
@@ -269,6 +268,21 @@ class UsageCache:
         log.info('fetch_usage -> OK (5h: %s%%, 7d: %s%%)', pct_5h if pct_5h is not None else '?', pct_7d if pct_7d is not None else '?')
         self._record_success(data)
         return UpdateResult(data=data)
+
+    def _apply_rate_limit_backoff(self, data: dict[str, Any]) -> None:
+        """Arm the 429 backoff window from a rate-limited error response.
+
+        Uses the server's ``Retry-After`` when present (clamped between
+        ``POLL_INTERVAL`` and ``MAX_BACKOFF``), otherwise an exponential
+        backoff based on the consecutive error count.
+        """
+        retry_after = data.get('retry_after')
+        if retry_after is not None and retry_after > 0:
+            delay = min(max(retry_after, POLL_INTERVAL), MAX_BACKOFF)
+        else:
+            delay = min(POLL_INTERVAL * (2 ** max(self._consecutive_errors - 1, 0)), MAX_BACKOFF)
+        self._rate_limit_until = time.time() + delay
+        log.warning('fetch_usage -> rate limited, backoff %.0fs', delay)
 
     def _record_error(self, data: dict[str, Any], *, count: bool = True) -> None:
         """Apply common state updates after a failed API response.
@@ -303,7 +317,7 @@ class UsageCache:
             self._refreshing = False
             self._version += 1
 
-    def _try_token_refresh(self, token_before: str | None) -> RefreshResult | None:
+    def _try_token_refresh(self, token_before: str | None) -> tuple[RefreshResult | None, dict[str, Any] | None]:
         """Obtain a working access token after a 401 and retry the usage fetch.
 
         If the credentials already hold a different token - the user
@@ -319,10 +333,11 @@ class UsageCache:
 
         Returns
         -------
-        RefreshResult or None
-            The outcome to report to the caller, or ``None`` when no usable
-            token could be obtained (CLI unavailable, or token unchanged
-            after the refresh).
+        tuple[RefreshResult | None, dict | None]
+            The refresh outcome to report to the caller (``None`` when no
+            usable token could be obtained: CLI unavailable, or token
+            unchanged after the refresh), and the retry's API response
+            (``None`` when no retry was made).
         """
         result = RefreshResult(success=True, updated=False, old_version='', new_version='', error='')
 
@@ -331,11 +346,11 @@ class UsageCache:
             result = refresh_token()
             if not result.success:
                 log.info('token refresh failed: %s', result.error)
-                return None
+                return None, None
 
             if read_access_token() == token_before:
                 log.info('token refresh succeeded but token unchanged')
-                return None
+                return None, None
 
             log.info('token changed via refresh, retrying fetch_usage')
         else:
@@ -345,11 +360,13 @@ class UsageCache:
         if 'error' not in data:
             log.info('retry -> OK')
             self._record_success(data)
-            return result
+            return result, data
 
         log.warning('retry -> error: %s', data['error'])
         # Update error message but do not increment _consecutive_errors
         # again (the caller already counted this update cycle as one error).
         self._record_error(data, count=False)
+        if data.get('rate_limited'):
+            self._apply_rate_limit_backoff(data)
 
-        return result
+        return result, data
