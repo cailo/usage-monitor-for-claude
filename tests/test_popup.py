@@ -677,6 +677,82 @@ class TestPinState(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# report_height / first show
+# ---------------------------------------------------------------------------
+
+class TestReportHeight(unittest.TestCase):
+    """Tests for _PopupApi.report_height - the first report must always show the window."""
+
+    def _build_popup(self):
+        """Run the real UsagePopup.__init__ with webview mocked, return (popup, api).
+
+        __init__ blocks on _closed.wait(), so it runs on a worker thread; the
+        _PopupApi instance is captured from the js_api argument passed to
+        webview.create_window.
+        """
+        patcher_watch = patch.object(UsagePopup, '_dismiss_watch', lambda self: None)
+        patcher_webview = patch('usage_monitor_for_claude.popup.webview')
+        patcher_watch.start()
+        mock_webview = patcher_webview.start()
+        self.addCleanup(patcher_webview.stop)
+        self.addCleanup(patcher_watch.stop)
+
+        app = MagicMock()
+        thread = threading.Thread(target=lambda: UsagePopup(app), daemon=True)
+        thread.start()
+
+        deadline = time.time() + 2.0
+        while not mock_webview.create_window.called and time.time() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(mock_webview.create_window.called)
+
+        api = mock_webview.create_window.call_args.kwargs['js_api']
+        popup = api._popup
+        self.addCleanup(popup._closed.set)
+
+        popup._resize_and_position = MagicMock()
+        popup._show_window = MagicMock()
+        return popup, api
+
+    def test_first_report_at_initial_window_height_shows_popup(self):
+        """A first content height equal to the initial window height must still show the window."""
+        popup, api = self._build_popup()
+        initial_window_height = mock_height = 400
+
+        api.report_height(mock_height)
+
+        popup._resize_and_position.assert_called_once_with(initial_window_height)
+        popup._show_window.assert_called_once()
+
+    def test_first_report_at_other_height_shows_popup(self):
+        """A first content height different from the window height shows the window."""
+        popup, api = self._build_popup()
+
+        api.report_height(523)
+
+        popup._resize_and_position.assert_called_once_with(523)
+        popup._show_window.assert_called_once()
+
+    def test_repeated_report_with_same_height_is_deduplicated(self):
+        """A second report with an unchanged height must not resize again."""
+        popup, api = self._build_popup()
+
+        api.report_height(523)
+        api.report_height(523)
+
+        popup._resize_and_position.assert_called_once_with(523)
+
+    def test_zero_height_ignored(self):
+        """A zero height report is ignored entirely."""
+        popup, api = self._build_popup()
+
+        api.report_height(0)
+
+        popup._resize_and_position.assert_not_called()
+        popup._show_window.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # Dismiss-watch shutdown
 # ---------------------------------------------------------------------------
 

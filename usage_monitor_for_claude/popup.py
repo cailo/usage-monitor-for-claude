@@ -254,7 +254,11 @@ class UsagePopup:
         self._popup_hwnd = 0
         self._pump_tid = 0
         initial_height = 400
-        self._last_height = initial_height
+        # 0 means "no height reported yet": the first ResizeObserver report
+        # must always count as a change so the window gets resized,
+        # positioned, and shown even when the content is exactly
+        # initial_height tall.
+        self._last_height = 0
         snap = app.cache.snapshot
         self._last_version = snap.version
 

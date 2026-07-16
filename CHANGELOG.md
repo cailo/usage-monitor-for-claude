@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Closing a pinned popup no longer keeps its system-wide input hooks installed - previously every pin-and-close cycle left another set of hooks behind, gradually adding input lag machine-wide until the app was restarted
+- The popup no longer stays invisible (and permanently refuses to open again until restart) when its rendered content happens to be exactly 400 pixels tall
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)
 
