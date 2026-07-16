@@ -35,6 +35,7 @@ _LWA_ALPHA = 0x00000002
 _SWP_NOSIZE = 0x0001
 _SWP_NOZORDER = 0x0004
 _SWP_NOACTIVATE = 0x0010
+_WM_QUIT = 0x0012
 
 
 class _MONITORINFO(ctypes.Structure):
@@ -251,6 +252,7 @@ class UsagePopup:
         self._drag_start_dpi = 0
         self._closed = threading.Event()
         self._popup_hwnd = 0
+        self._pump_tid = 0
         initial_height = 400
         self._last_height = initial_height
         snap = app.cache.snapshot
@@ -316,11 +318,17 @@ class UsagePopup:
         process on every click inside the content area.
         """
         this_thread = ctypes.windll.kernel32.GetCurrentThreadId()
-        WM_QUIT = 0x0012
+
+        # Force creation of this thread's message queue before publishing the
+        # thread id, so a WM_QUIT posted by _post_pump_quit() from another
+        # thread cannot be lost in the queue-creation window.
+        msg = ctypes.wintypes.MSG()
+        ctypes.windll.user32.PeekMessageW(ctypes.byref(msg), None, 0, 0, 0)  # PM_NOREMOVE
+        self._pump_tid = this_thread
 
         def _post_quit() -> None:
             if self._shown and not self._pinned:
-                ctypes.windll.user32.PostThreadMessageW(this_thread, WM_QUIT, 0, 0)
+                ctypes.windll.user32.PostThreadMessageW(this_thread, _WM_QUIT, 0, 0)
 
         # -- Shared argtypes for CallNextHookEx --
         _call_next = ctypes.windll.user32.CallNextHookEx
@@ -406,7 +414,6 @@ class UsagePopup:
         fg_hook = ctypes.windll.user32.SetWinEventHook(0x0003, 0x0003, None, fg_proc, 0, 0, 0x0002)
 
         try:
-            msg = ctypes.wintypes.MSG()
             while self._running and ctypes.windll.user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
                 pass
         finally:
@@ -415,15 +422,29 @@ class UsagePopup:
             ctypes.windll.user32.UnhookWindowsHookEx(mouse_hook)
             ctypes.windll.user32.UnhookWindowsHookEx(kb_hook)
             ctypes.windll.user32.UnhookWinEvent(fg_hook)
+            self._pump_tid = 0
 
         self._close()
 
+    def _post_pump_quit(self) -> None:
+        """Wake the dismiss-watch pump so it can remove its hooks and exit.
+
+        The pump blocks inside ``GetMessageW`` and re-checks ``_running``
+        only after a message arrives, so setting the flag alone is not
+        enough - especially while pinned, where the user-dismissal path
+        (``_post_quit``) never posts.
+        """
+        if self._pump_tid:
+            ctypes.windll.user32.PostThreadMessageW(self._pump_tid, _WM_QUIT, 0, 0)
+
     def _on_window_closed(self) -> None:
         self._running = False
+        self._post_pump_quit()
         self._closed.set()
 
     def _close(self) -> None:
         self._running = False
+        self._post_pump_quit()
         try:
             self._window.destroy()
         except Exception:

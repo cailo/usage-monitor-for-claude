@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - When a custom config directory is in effect (`--config-dir` or `CLAUDE_CONFIG_DIR`), a `usage-monitor-settings.json` in that directory now takes priority over the one next to the EXE, so each instance can have its own settings
 
+### Fixed
+
+- Closing a pinned popup no longer keeps its system-wide input hooks installed - previously every pin-and-close cycle left another set of hooks behind, gradually adding input lag machine-wide until the app was restarted
+
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)
 
 ## [1.19.0] - 2026-07-14

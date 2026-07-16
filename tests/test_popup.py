@@ -8,6 +8,8 @@ and _init_config.
 from __future__ import annotations
 
 import ctypes
+import threading
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -672,6 +674,62 @@ class TestPinState(unittest.TestCase):
 
         self.assertFalse(popup._dragging)
         popup._window.resize.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Dismiss-watch shutdown
+# ---------------------------------------------------------------------------
+
+class TestDismissWatchShutdown(unittest.TestCase):
+    """Tests that closing the popup terminates the dismiss-watch message pump.
+
+    The pump installs system-wide input hooks and only removes them when
+    its GetMessageW loop exits.  Closing the window must wake the pump in
+    every state - especially while pinned, where the user-dismissal path
+    (_post_quit) never fires.
+    """
+
+    def _start_pump(self, pinned):
+        """Build a minimal popup and run the real _dismiss_watch on a thread."""
+        popup = object.__new__(UsagePopup)
+        popup._running = True
+        popup._pinned = pinned
+        popup._shown = True
+        popup._popup_hwnd = 0
+        popup._pump_tid = 0
+        popup._closed = threading.Event()
+        popup._window = MagicMock()
+
+        thread = threading.Thread(target=popup._dismiss_watch, daemon=True)
+        thread.start()
+
+        # Wait until the pump published its thread id (pump is about to block
+        # in GetMessageW); fall back to a fixed delay if it never appears.
+        deadline = time.time() + 1.0
+        while not popup._pump_tid and time.time() < deadline:
+            time.sleep(0.01)
+        return popup, thread
+
+    def test_close_while_pinned_exits_pump(self):
+        """_close() on a pinned popup must end the pump so hooks are unhooked."""
+        popup, thread = self._start_pump(pinned=True)
+        popup._close()
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+
+    def test_close_while_unpinned_exits_pump(self):
+        """_close() on an unpinned popup must end the pump immediately, not on the next outside click."""
+        popup, thread = self._start_pump(pinned=False)
+        popup._close()
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
+
+    def test_window_closed_event_exits_pump(self):
+        """The pywebview closed event must end the pump even while pinned."""
+        popup, thread = self._start_pump(pinned=True)
+        popup._on_window_closed()
+        thread.join(timeout=2)
+        self.assertFalse(thread.is_alive())
 
 
 # ---------------------------------------------------------------------------
