@@ -57,6 +57,19 @@ class TestParseConfigDir(unittest.TestCase):
         argv = ['app.exe', '--config-dir=C:\\first', '--config-dir=C:\\second']
         self.assertEqual(parse_config_dir(argv), r'C:\second')
 
+    def test_drive_root_keeps_separator(self):
+        """A drive root must stay a root - a bare 'D:' is drive-relative
+        (the current directory on that drive), silently pointing the
+        instance at a different directory."""
+        self.assertEqual(parse_config_dir(['app.exe', '--config-dir=D:\\']), 'D:\\')
+
+    def test_drive_root_with_cmd_trailing_quote(self):
+        """cmd.exe turns --config-dir="D:\\" into a value with a trailing quote."""
+        self.assertEqual(parse_config_dir(['app.exe', '--config-dir=D:\\"']), 'D:\\')
+
+    def test_drive_root_forward_slash(self):
+        self.assertEqual(parse_config_dir(['app.exe', '--config-dir=D:/']), 'D:\\')
+
 
 class TestConfigDirSuffix(unittest.TestCase):
     """Tests for config_dir_suffix() and is_default_config_dir()."""

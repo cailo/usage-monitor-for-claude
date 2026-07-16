@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from pathlib import Path
 
 __all__ = ['config_dir_suffix', 'effective_config_dir', 'is_default_config_dir', 'parse_config_dir']
@@ -53,6 +54,11 @@ def parse_config_dir(argv: list[str]) -> str | None:
     value = value.strip().strip('"').rstrip('\\/')
     if not value:
         return None
+
+    # A bare drive letter left by the rstrip ('D:') is a drive-relative path
+    # (the current directory on that drive) - restore the root separator.
+    if re.fullmatch(r'[A-Za-z]:', value):
+        value += '\\'
 
     return str(Path(os.path.expandvars(value)).expanduser())
 
