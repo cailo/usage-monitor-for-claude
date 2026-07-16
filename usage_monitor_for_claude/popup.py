@@ -532,13 +532,20 @@ class UsagePopup:
                 if snap.version == self._last_version and next_poll_time == last_next_poll_time:
                     continue
                 if snap.version != self._last_version:
-                    self._last_version = snap.version
                     cached_installations = [{'name': i.name, 'version': i.version} for i in find_installations()]
-                last_next_poll_time = next_poll_time
                 data = _snapshot_to_dict(snap, installations=cached_installations, next_poll_time=next_poll_time)
                 self._window.evaluate_js(f'updateData({json.dumps(data)})')
+                # Commit the markers only after a successful push, so a failed
+                # update is retried on the next tick instead of being skipped
+                # by the dedup check until the next data change.
+                self._last_version = snap.version
+                last_next_poll_time = next_poll_time
             except Exception:
-                break
+                # A transient failure (snapshot conversion, filesystem scan,
+                # one-off evaluate_js hiccup) must not end the update stream -
+                # a pinned popup can live for days.  The destroyed-window
+                # case exits via the _running flag on the next iteration.
+                continue
 
     def _tray_position(self, physical_width: int, physical_height: int) -> tuple[int, int]:
         """Calculate popup position near the system tray.

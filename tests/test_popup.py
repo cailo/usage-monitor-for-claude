@@ -815,6 +815,94 @@ class TestDismissWatchShutdown(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# _update_loop resilience
+# ---------------------------------------------------------------------------
+
+class TestUpdateLoopResilience(unittest.TestCase):
+    """Tests that a transient failure does not end the popup's update stream."""
+
+    def test_transient_failure_does_not_end_update_loop(self):
+        """One failing evaluate_js (or snapshot conversion) must not stop updates -
+        a pinned popup can live for days and would show stale bars forever."""
+        popup = object.__new__(UsagePopup)
+        popup._running = True
+        popup._last_version = 0
+        popup._window = MagicMock()
+
+        class FakeCache:
+            def __init__(self):
+                self.version_counter = 0
+
+            @property
+            def snapshot(self):
+                self.version_counter += 1
+                snap = MagicMock()
+                snap.version = self.version_counter
+                return snap
+
+        popup.app = MagicMock()
+        popup.app.cache = FakeCache()
+        popup.app._next_poll_time = 100.0
+
+        def eval_js(_script):
+            if popup._window.evaluate_js.call_count == 1:
+                raise RuntimeError('transient WebView2 hiccup')
+            popup._running = False
+
+        popup._window.evaluate_js.side_effect = eval_js
+
+        iterations = [0]
+
+        def guarded_sleep(_seconds):
+            iterations[0] += 1
+            if iterations[0] > 10:
+                popup._running = False
+
+        with patch('usage_monitor_for_claude.popup.time.sleep', side_effect=guarded_sleep), \
+             patch('usage_monitor_for_claude.popup.find_installations', return_value=[]), \
+             patch('usage_monitor_for_claude.popup._snapshot_to_dict', return_value={}):
+            popup._update_loop()
+
+        self.assertEqual(popup._window.evaluate_js.call_count, 2)
+
+    def test_failed_update_is_retried_on_next_tick(self):
+        """An update that failed to push is retried even when the data did not
+        change again - the version marker advances only on success."""
+        popup = object.__new__(UsagePopup)
+        popup._running = True
+        popup._last_version = 0
+        popup._window = MagicMock()
+
+        snap = MagicMock()
+        snap.version = 1
+        popup.app = MagicMock()
+        popup.app.cache.snapshot = snap
+        popup.app._next_poll_time = 100.0
+
+        def eval_js(_script):
+            if popup._window.evaluate_js.call_count == 1:
+                raise RuntimeError('transient WebView2 hiccup')
+            popup._running = False
+
+        popup._window.evaluate_js.side_effect = eval_js
+
+        iterations = [0]
+
+        def guarded_sleep(_seconds):
+            iterations[0] += 1
+            if iterations[0] > 10:
+                popup._running = False
+
+        with patch('usage_monitor_for_claude.popup.time.sleep', side_effect=guarded_sleep), \
+             patch('usage_monitor_for_claude.popup.find_installations', return_value=[]), \
+             patch('usage_monitor_for_claude.popup._snapshot_to_dict', return_value={}):
+            popup._update_loop()
+
+        self.assertEqual(popup._window.evaluate_js.call_count, 2)
+        self.assertEqual(popup._last_version, 1)
+
+
+# ---------------------------------------------------------------------------
 # _tray_position
 # ---------------------------------------------------------------------------
 

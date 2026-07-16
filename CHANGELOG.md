@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two quotas resetting at the same time (e.g. a weekly window together with its per-model limit) now produce a single "quota reset" notification instead of identical back-to-back toasts
 - When the retry after an expired-token refresh is answered with a rate limit (HTTP 429), the app now honors the server's requested wait time and shows the rate-limit state instead of keeping the credentials-error icon and re-polling the already limited endpoint too early
 - Setting the system clock backwards (manual correction, time sync, resuming a virtual machine snapshot) no longer freezes the tray on stale data for the duration of the jump - polling re-anchors to the new clock right away
+- A pinned popup no longer stops receiving live updates after a single transient failure (it could previously show stale bars for days with only the clock still ticking) - a failed update is retried on the next tick
 - [Notification icon](https://github.com/jens-duttke/usage-monitor-for-claude/issues/67) - alerts and reset notifications now show the app logo instead of the current tray icon, so the icon no longer says "you have nothing left" when a limit was just reset or is only partway used
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)
