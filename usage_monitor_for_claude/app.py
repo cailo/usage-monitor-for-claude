@@ -488,6 +488,9 @@ class UsageMonitorForClaude:
 
         # Notify when quota resets after being nearly exhausted, but only if no other quota is blocking usage.
         # While idle/locked, defer notifications until the user returns (avoids lock screen privacy concerns).
+        # The message carries no field information, so several quotas resetting
+        # within one polling gap still produce a single notification.
+        reset_detected = False
         for key, pct in quota_fields.items():
             prev = self._prev_utilization.get(key)
             if prev is None:
@@ -502,7 +505,10 @@ class UsageMonitorForClaude:
             any_blocking = any(other_pct >= 99 for other_key, other_pct in quota_fields.items() if other_key != key)
 
             if prev > reset_threshold and pct < prev and not any_blocking:
-                self._notify_or_defer('reset', T['notify_reset'], T['notify_reset_title'])
+                reset_detected = True
+
+        if reset_detected:
+            self._notify_or_defer('reset', T['notify_reset'], T['notify_reset_title'])
 
         # Run reset command on any detected usage drop (independent of notification threshold)
         for key, pct in quota_fields.items():
