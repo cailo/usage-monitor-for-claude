@@ -58,10 +58,11 @@ def _align_to_reset(interval: int, next_reset: float | None) -> tuple[int, bool]
 
     Every returned interval stays at or above ``POLL_FAST`` (the cache
     cooldown), so the reset is caught without polling faster.  The poll before
-    the reset is pulled forward to ``POLL_FAST`` seconds before it; from there
-    the confirming poll lands ``RESET_BUFFER`` seconds after the reset.  When
-    the current poll is already too close to pull the previous one forward
-    without breaking the cooldown, the confirming poll is committed directly.
+    the reset is pulled forward to ``POLL_FAST - RESET_BUFFER`` seconds before
+    it (the danger-window start); from there the confirming poll lands
+    ``RESET_BUFFER`` seconds after the reset.  When the current poll is
+    already too close to pull the previous one forward without breaking the
+    cooldown, the confirming poll is committed directly.
 
     Parameters
     ----------
@@ -93,8 +94,9 @@ def _align_to_reset(interval: int, next_reset: float | None) -> tuple[int, bool]
     if next_reset < interval + danger:
         # A normal interval would drop the next poll into that last window,
         # from where the confirming poll would overshoot.  Pull it forward to
-        # the window start (POLL_FAST before the reset); if that is too close
-        # to keep POLL_FAST spacing, commit to the confirming poll directly.
+        # the window start (POLL_FAST - RESET_BUFFER before the reset); if
+        # that is too close to keep POLL_FAST spacing, commit to the
+        # confirming poll directly.
         pre = int(next_reset) - danger
         return (pre if pre >= POLL_FAST else post), True
 
