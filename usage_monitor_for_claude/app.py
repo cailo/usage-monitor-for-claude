@@ -449,7 +449,7 @@ class UsageMonitorForClaude:
         # returns a different account UUID, preventing a false quota-reset notification.
         self.cache.ensure_profile()
         current_profile = self.cache.profile
-        current_account_uuid = current_profile.get('account', {}).get('uuid') if isinstance(current_profile, dict) else None
+        current_account_uuid = (current_profile.get('account') or {}).get('uuid') if isinstance(current_profile, dict) else None
 
         # Unknown identity with a known baseline: the profile fetch failed
         # after a token change, so this usage data may already belong to a
@@ -460,7 +460,7 @@ class UsageMonitorForClaude:
             return
 
         if self._prev_account_uuid is not None and current_account_uuid is not None and current_account_uuid != self._prev_account_uuid:
-            email = current_profile.get('account', {}).get('email', '')
+            email = (current_profile.get('account') or {}).get('email', '')
             message = T['notify_account_switched'].format(email=email) if email else T['notify_account_switched_title']
             self._notify_or_defer('account_switched', message, T['notify_account_switched_title'])
             self._prev_utilization = {}
@@ -778,7 +778,7 @@ class UsageMonitorForClaude:
 
         self.cache.ensure_profile(bypass_rate_limit=True)
         profile = self.cache.profile
-        current_uuid = profile.get('account', {}).get('uuid') if isinstance(profile, dict) else None
+        current_uuid = (profile.get('account') or {}).get('uuid') if isinstance(profile, dict) else None
 
         return current_uuid is not None and current_uuid != self._prev_account_uuid
 

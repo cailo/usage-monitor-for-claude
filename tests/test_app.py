@@ -2727,6 +2727,22 @@ class TestAccountSwitchDetection(unittest.TestCase):
 
     @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
     @patch('usage_monitor_for_claude.app.create_icon_image')
+    def test_null_account_in_profile_does_not_crash(self, _icon, _tooltip):
+        """A profile response with account: null must not crash the poll thread."""
+        data = {'five_hour': {'utilization': 10.0}}
+        self.app._prev_account_uuid = 'uuid-old'
+        mock = MagicMock()
+        mock.update.return_value = UpdateResult(data=data)
+        mock.profile = {'account': None, 'organization': None}
+        self.app.cache = mock
+
+        self.app.update()
+
+        self.app.icon.notify.assert_not_called()
+        self.assertEqual(self.app._prev_account_uuid, 'uuid-old')
+
+    @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
+    @patch('usage_monitor_for_claude.app.create_icon_image')
     def test_no_reset_notification_while_account_identity_unknown(self, _icon, _tooltip):
         """A usage drop is not reported as a quota reset while the profile is unknown -
         the data may already belong to a different account."""
@@ -2786,6 +2802,13 @@ class TestAccountSwitchedProbe(unittest.TestCase):
         """When the profile could not be loaded, no switch is reported."""
         self.app._prev_account_uuid = 'uuid-old'
         self.app.cache.profile = None
+
+        self.assertFalse(self.app._account_switched())
+
+    def test_null_account_returns_false(self):
+        """A profile response with account: null must not crash the token watcher."""
+        self.app._prev_account_uuid = 'uuid-old'
+        self.app.cache.profile = {'account': None}
 
         self.assertFalse(self.app._account_switched())
 

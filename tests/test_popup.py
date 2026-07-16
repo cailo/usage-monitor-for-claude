@@ -187,6 +187,12 @@ class TestSnapshotToDict(unittest.TestCase):
         self.assertEqual(result['profile']['email'], '')
         self.assertEqual(result['profile']['plan'], '')
 
+    def test_profile_with_null_account_and_organization(self):
+        """A profile carrying account/organization as null must not crash the popup."""
+        result = _snapshot_to_dict(_snap(profile={'account': None, 'organization': None}), installations=[])
+        self.assertEqual(result['profile']['email'], '')
+        self.assertEqual(result['profile']['plan'], '')
+
     # -- usage bars --
 
     def test_no_usage_data(self):

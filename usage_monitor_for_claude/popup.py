@@ -86,8 +86,8 @@ def _snapshot_to_dict(
     # returns an empty or incomplete response, instead of rendering empty Email/Plan fields.
     profile = None
     if snap.profile:
-        account = snap.profile.get('account', {})
-        org = snap.profile.get('organization', {})
+        account = snap.profile.get('account') or {}
+        org = snap.profile.get('organization') or {}
         profile = {
             'email': account.get('email', ''),
             'plan': org.get('organization_type', '').replace('_', ' ').title(),
