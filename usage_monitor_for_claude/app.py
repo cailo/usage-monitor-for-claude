@@ -909,6 +909,15 @@ class UsageMonitorForClaude:
                     if self._last_response.get('auth_error'):
                         break
 
+                # Re-anchor the wait target after a backward clock jump -
+                # otherwise the poll would stall until the wall clock catches
+                # up with the pre-jump target, potentially for hours.  The
+                # bound leaves room for reset-aligned targets, which may lie
+                # up to roughly POLL_FAST past a normal interval.
+                if target - time.time() > interval + POLL_FAST:
+                    target = time.time() + interval
+                    self._next_poll_time = target
+
                 # If another thread (popup) fetched successfully, push the next
                 # poll a full interval past that fetch to avoid a redundant one.
                 # Only react to an actual new fetch (last_success advanced), not

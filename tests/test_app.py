@@ -2104,6 +2104,7 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
         mock_time.side_effect = [
             100.0,   # target = time() + interval
             100.0,   # inner loop: time() < target
+            100.0,   # backward-jump clamp check
             100.0,   # _wait_for_activity: time() for deadline calc
             200.0,   # second iteration target
             200.0,   # inner loop exits (running=False)
@@ -2132,7 +2133,8 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
         mock_time.side_effect = [
             100.0,   # target = time() + interval
             100.0,   # inner loop: time() < target
-            200.0,   # after _wait_for_activity: time() - lst >= interval
+            100.0,   # backward-jump clamp check
+            200.0,   # after _wait_for_activity: reset realign / interval check
         ]
 
         with patch.object(self.app, 'update'), \
@@ -2158,6 +2160,7 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
         mock_time.side_effect = [
             100.0,   # target = time() + interval
             100.0,   # inner loop: time() < target
+            100.0,   # backward-jump clamp check
             200.0,   # after _wait_for_activity: time() - lst >= interval
         ]
 
@@ -2195,9 +2198,11 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
         mock_time.side_effect = [
             100.0,    # 1st iter: target = time() + interval
             100.0,    # 1st inner loop: time() < target
+            100.0,    # backward-jump clamp check
             100.0,    # deadline calc: time() + 30 + 5
             200.0,    # 2nd iter: target = time() + interval
             200.0,    # 2nd inner loop: time() < target
+            200.0,    # backward-jump clamp check
             200.0,    # deadline calc (_idle_reset_pending path): time() + 180
             400.0,    # 3rd iter: target = time() + interval
             400.0,    # 3rd inner loop: time() < target -> running=False
@@ -2240,6 +2245,7 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
         mock_time.side_effect = [
             100.0,    # 1st iter: target = time() + interval
             100.0,    # 1st inner loop: time() < target
+            100.0,    # backward-jump clamp check
             100.0,    # deadline calc: time() + 300 + 5
             200.0,    # after wait: time() - lst >= interval -> break
             200.0,    # 2nd iter: target = time() + interval
@@ -2283,9 +2289,11 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
         mock_time.side_effect = [
             100.0,    # 1st iter: target
             100.0,    # 1st inner loop check
+            100.0,    # backward-jump clamp check
             100.0,    # deadline calc: time() + 30 + 5
             200.0,    # 2nd iter: target
             200.0,    # 2nd inner loop check
+            200.0,    # backward-jump clamp check
             200.0,    # deadline calc (_idle_reset_pending): time() + 180
             400.0,    # 3rd iter: target
             400.0,    # 3rd inner loop check -> running=False
@@ -2413,6 +2421,30 @@ class TestPollLoopIdleInterruption(unittest.TestCase):
         # Deferred to the reset-aligned slot just after the reset:
         # max(1000 + 209 + RESET_BUFFER, 1000 + POLL_FAST) = 1214.
         self.assertEqual(self.app._next_poll_time, 1000.0 + 209.0 + RESET_BUFFER)
+
+    @patch('usage_monitor_for_claude.app.ON_RESET_COMMAND', [])
+    def test_backward_clock_jump_reanchors_poll_target(self):
+        """A backward clock jump must not leave the next poll stuck at a target
+        that is now hours in the future - the wait re-anchors to the interval."""
+        self.app.cache.last_success_time = 9000.0
+        clock = {'now': 10000.0}
+
+        def jump_back(_seconds):
+            clock['now'] = 5000.0
+
+        def is_away():
+            self.app.running = False
+            return False
+
+        with patch.object(self.app, 'update'), \
+             patch.object(self.app, '_calculate_poll_interval', return_value=180), \
+             patch.object(self.app, '_is_user_away', side_effect=is_away), \
+             patch.object(self.app, '_seconds_until_next_reset', return_value=None), \
+             patch('usage_monitor_for_claude.app.time.time', side_effect=lambda: clock['now']), \
+             patch('usage_monitor_for_claude.app.time.sleep', side_effect=jump_back):
+            self.app.poll_loop()
+
+        self.assertEqual(self.app._next_poll_time, 5000.0 + 180)
 
 
 class TestPollLoopAccountSwitch(unittest.TestCase):

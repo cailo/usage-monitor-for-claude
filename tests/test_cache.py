@@ -143,6 +143,37 @@ class TestCooldownBehavior(unittest.TestCase):
         self.assertIsNotNone(result.data)
         mock_fetch.assert_called_once()
 
+    @patch('usage_monitor_for_claude.cache.fetch_usage', return_value=_SUCCESS_DATA)
+    @patch('usage_monitor_for_claude.cache.time')
+    def test_backward_clock_jump_does_not_stall_cooldown(self, mock_time, mock_fetch):
+        """A backward clock jump (manual correction, VM restore) must not block
+        fetches until the wall clock catches up with the pre-jump timestamp."""
+        cache = _make_cache()
+        mock_time.time.return_value = 10000.0
+        cache.update()
+        mock_fetch.reset_mock()
+
+        # Clock jumps back one hour; without a clamp the cooldown would block
+        # for that whole hour (time since "last success" stays negative).
+        mock_time.time.return_value = 6400.0
+        result = cache.update()
+
+        self.assertIsNotNone(result.data)
+        mock_fetch.assert_called_once()
+
+    @patch('usage_monitor_for_claude.cache.fetch_usage', return_value=_SUCCESS_DATA)
+    @patch('usage_monitor_for_claude.cache.time')
+    def test_backward_clock_jump_caps_rate_limit_backoff(self, mock_time, _mock_fetch):
+        """After a backward clock jump, the remaining 429 backoff is capped to
+        MAX_BACKOFF instead of lasting until the pre-jump timestamp."""
+        cache = _make_cache()
+        cache._rate_limit_until = 10000.0
+
+        mock_time.time.return_value = 5000.0
+        cache.update()
+
+        self.assertLessEqual(cache._rate_limit_until - 5000.0, 900)
+
 
 # ---------------------------------------------------------------------------
 # Success state management
