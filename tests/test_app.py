@@ -2658,12 +2658,70 @@ class TestAccountSwitchDetection(unittest.TestCase):
 
         self.app.icon.notify.assert_not_called()
 
+    @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
+    @patch('usage_monitor_for_claude.app.create_icon_image')
+    def test_profile_failure_keeps_account_baseline(self, _icon, _tooltip):
+        """A failed profile fetch must not wipe the known account UUID baseline."""
+        data = {'five_hour': {'utilization': 10.0}}
+        self.app._prev_account_uuid = 'uuid-old'
+        mock = MagicMock()
+        mock.update.return_value = UpdateResult(data=data)
+        mock.profile = None
+        self.app.cache = mock
+
+        self.app.update()
+
+        self.assertEqual(self.app._prev_account_uuid, 'uuid-old')
+
+    @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
+    @patch('usage_monitor_for_claude.app.create_icon_image')
+    def test_switch_detected_after_transient_profile_failure(self, _icon, _tooltip):
+        """An account switch is still detected when the profile fetch failed once in between."""
+        self.app._prev_account_uuid = 'uuid-old'
+        self.app._prev_utilization = {'five_hour': 97.0}
+
+        # Poll during the switch: usage OK, profile fetch failed
+        mock = MagicMock()
+        mock.update.return_value = UpdateResult(data={'five_hour': {'utilization': 5.0}})
+        mock.profile = None
+        self.app.cache = mock
+        self.app.update()
+
+        # Next poll: profile is back and reports the new account
+        self.app.cache = self._make_cache_mock('uuid-new', 'new@example.com', {'five_hour': {'utilization': 5.0}})
+        self.app.update()
+
+        self.app.icon.notify.assert_called_once()
+        self.assertIn('new@example.com', self.app.icon.notify.call_args[0][0])
+        self.assertEqual(self.app._prev_account_uuid, 'uuid-new')
+        self.assertEqual(self.app._prev_utilization, {})
+
+    @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
+    @patch('usage_monitor_for_claude.app.create_icon_image')
+    def test_no_reset_notification_while_account_identity_unknown(self, _icon, _tooltip):
+        """A usage drop is not reported as a quota reset while the profile is unknown -
+        the data may already belong to a different account."""
+        data = {'five_hour': {'utilization': 5.0}}
+        self.app._prev_utilization = {'five_hour': 97.0}
+        self.app._prev_account_uuid = 'uuid-old'
+        mock = MagicMock()
+        mock.update.return_value = UpdateResult(data=data)
+        mock.profile = None
+        self.app.cache = mock
+
+        self.app.update()
+
+        self.app.icon.notify.assert_not_called()
+        # The old baseline is kept so the comparison can resume once the
+        # account identity is known again.
+        self.assertEqual(self.app._prev_utilization, {'five_hour': 97.0})
+
 
 # ---------------------------------------------------------------------------
 # _account_switched (immediate switch detection)
 # ---------------------------------------------------------------------------
 
-class TestAccountSwitchDetection(unittest.TestCase):
+class TestAccountSwitchedProbe(unittest.TestCase):
     """Tests for _account_switched() used by the poll loop's token watcher."""
 
     def setUp(self):

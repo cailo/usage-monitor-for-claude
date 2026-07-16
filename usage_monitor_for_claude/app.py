@@ -450,6 +450,15 @@ class UsageMonitorForClaude:
         self.cache.ensure_profile()
         current_profile = self.cache.profile
         current_account_uuid = current_profile.get('account', {}).get('uuid') if isinstance(current_profile, dict) else None
+
+        # Unknown identity with a known baseline: the profile fetch failed
+        # after a token change, so this usage data may already belong to a
+        # different account.  Skip all cross-poll comparisons and keep the
+        # baselines untouched; the poll where the profile is readable again
+        # detects the switch (or resumes normally for the same account).
+        if self._prev_account_uuid is not None and current_account_uuid is None:
+            return
+
         if self._prev_account_uuid is not None and current_account_uuid is not None and current_account_uuid != self._prev_account_uuid:
             email = current_profile.get('account', {}).get('email', '')
             message = T['notify_account_switched'].format(email=email) if email else T['notify_account_switched_title']
