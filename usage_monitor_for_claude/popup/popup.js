@@ -324,7 +324,14 @@ function formatCountdown(totalSeconds) {
 }
 
 function updateUsageBars(entries) {
-    if (entries.length !== els.usageBars.children.length) {
+    // Rebuild whenever the field set changes, not only the count - after an
+    // account switch the same number of bars can carry different quotas, and
+    // an in-place update would show the new values under the old labels.
+    const bars = els.usageBars.children;
+    const sameFields = entries.length === bars.length
+        && entries.every((entry, i) => bars[i].dataset.key === entry.key);
+
+    if (!sameFields) {
         els.usageBars.replaceChildren(...entries.map(createBarElement));
         requestAnimationFrame(() => {
             for (let i = 0; i < entries.length; i++) {
@@ -342,6 +349,7 @@ function updateUsageBars(entries) {
 function createBarElement(entry) {
     const div = document.createElement('div');
     div.className = 'usage-entry';
+    div.dataset.key = entry.key;
 
     const header = document.createElement('div');
     header.className = 'bar-header';

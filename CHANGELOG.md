@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A pinned popup no longer stops receiving live updates after a single transient failure (it could previously show stale bars for days with only the clock still ticking) - a failed update is retried on the next tick
 - The tray icon no longer permanently stops following light/dark theme switches after a single failed re-render (e.g. during an Explorer restart)
 - Two content-height changes arriving in quick succession (e.g. toggling the compact view right as a data update lands) can no longer leave the popup clipped or oversized until the next content change
+- When the set of quota bars changes while the popup is open but their number stays the same (e.g. an account switch between two plans), the bars now rebuild with the correct labels instead of showing the new values under the old quota names
 - [Notification icon](https://github.com/jens-duttke/usage-monitor-for-claude/issues/67) - alerts and reset notifications now show the app logo instead of the current tray icon, so the icon no longer says "you have nothing left" when a limit was just reset or is only partway used
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)
