@@ -42,10 +42,25 @@ def detect_lang_code(lang: str) -> str:
         base = locale.normalize(parts[0]).split('.')[0].split('_')[0].lower()
 
     # Manual overrides for Windows locales that do not normalize cleanly to ISO codes.
+    region_override = ''
     if base == 'ukrainian':
         base = 'uk'
+    elif base == 'hindi':
+        base = 'hi'
+    elif base == 'indonesian':
+        base = 'id'
+    elif base.startswith('chinese'):
+        # Windows reports Chinese as e.g. 'Chinese (Simplified)_China' or
+        # 'Chinese (Traditional)_Hong Kong SAR'.  The script variant picks
+        # between the shipped zh files; the English region name from the
+        # original split can never match an ISO region code, so it is only
+        # used to infer the script when the name carries none.
+        original_region = parts[1] if len(parts) > 1 else ''
+        traditional = 'traditional' in base or original_region in ('Taiwan', 'Hong Kong SAR', 'Macao SAR')
+        base = 'zh'
+        region_override = 'TW' if traditional else 'CN'
 
-    region = parts[1] if len(parts) > 1 and len(base) <= 3 else ''
+    region = region_override or (parts[1] if len(parts) > 1 and len(base) <= 3 else '')
 
     if region and (LOCALE_DIR / f'{base}-{region}.json').exists():
         return f'{base}-{region}'

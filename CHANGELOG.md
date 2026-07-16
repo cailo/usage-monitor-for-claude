@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Answering "Yes" in the "already running" dialog now verifies that the old instance is really gone before starting - if it could not be terminated (for example because it runs with administrator rights), an error message appears instead of both instances silently running side by side
 - An account switch is no longer missed for the rest of the session when the profile request fails once around the switch - previously that also suppressed the "account switched" notification and could fire a false "quota reset" notification and reset command instead
 - Opening the popup roughly 3 to 5 minutes before a quota reset no longer delays the reset-confirming poll - the tray and the "quota reset" notification/command now react a few seconds after the reset instead of up to two minutes late
+- On Chinese, Hindi, and Indonesian Windows systems the app now starts in the system language instead of silently falling back to English (the shipped zh-CN, zh-TW, hi, and id translations were never picked up by the automatic language detection)
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)
 

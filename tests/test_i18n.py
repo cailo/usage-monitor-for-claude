@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 from usage_monitor_for_claude.i18n import LOCALE_DIR, detect_lang_code, load_translations
 
-MOCK_LOCALE_FILES = ['en.json', 'de.json', 'es.json', 'fr.json', 'ja.json', 'pt-BR.json', 'uk.json', 'zh-CN.json', 'zh-TW.json']
+MOCK_LOCALE_FILES = ['en.json', 'de.json', 'es.json', 'fr.json', 'hi.json', 'id.json', 'ja.json', 'pt-BR.json', 'uk.json', 'zh-CN.json', 'zh-TW.json']
 
 NORMALIZE_MAP = {
     'de_DE': 'de_DE.ISO8859-1',
@@ -96,6 +96,34 @@ class TestDetectLangCode(unittest.TestCase):
     def test_ukrainian_windows_name(self, _mock_norm):
         """Windows-style name with manual override resolves correctly."""
         self.assertEqual(detect_lang_code('Ukrainian_Ukraine'), 'uk')
+
+    def test_chinese_simplified_windows_name(self, _mock_norm):
+        """Simplified Chinese Windows display name resolves to zh-CN."""
+        self.assertEqual(detect_lang_code('Chinese (Simplified)_China'), 'zh-CN')
+
+    def test_chinese_traditional_windows_name(self, _mock_norm):
+        """Traditional Chinese Windows display name resolves to zh-TW."""
+        self.assertEqual(detect_lang_code('Chinese (Traditional)_Taiwan'), 'zh-TW')
+
+    def test_chinese_traditional_hong_kong_windows_name(self, _mock_norm):
+        """Hong Kong SAR resolves to the traditional-script file."""
+        self.assertEqual(detect_lang_code('Chinese (Traditional)_Hong Kong SAR'), 'zh-TW')
+
+    def test_chinese_simplified_singapore_windows_name(self, _mock_norm):
+        """Singapore resolves to the simplified-script file."""
+        self.assertEqual(detect_lang_code('Chinese (Simplified)_Singapore'), 'zh-CN')
+
+    def test_chinese_taiwan_without_script_windows_name(self, _mock_norm):
+        """A script-less 'Chinese_Taiwan' name resolves via the region to zh-TW."""
+        self.assertEqual(detect_lang_code('Chinese_Taiwan'), 'zh-TW')
+
+    def test_hindi_windows_name(self, _mock_norm):
+        """Hindi Windows display name resolves to hi."""
+        self.assertEqual(detect_lang_code('Hindi_India'), 'hi')
+
+    def test_indonesian_windows_name(self, _mock_norm):
+        """Indonesian Windows display name resolves to id."""
+        self.assertEqual(detect_lang_code('Indonesian_Indonesia'), 'id')
 
     def test_base_code_without_region(self, _mock_norm):
         """Base language code without region resolves directly."""
