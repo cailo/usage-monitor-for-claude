@@ -220,7 +220,13 @@ def ensure_single_instance() -> bool:
         _mutex_handle = None
         return False
 
-    if holder_pid:
+    # Re-read the holder info after the dialog: it can stay open for a long
+    # time, the old instance may have exited meanwhile, and Windows recycles
+    # PIDs - terminating the snapshotted PID could kill an unrelated process.
+    # The shared memory vanishes with its owner, so a matching re-read PID is
+    # a liveness signal for the snapshot.
+    current_holder_pid, _ = _read_holder_info()
+    if holder_pid and current_holder_pid == holder_pid:
         _terminate_pid(holder_pid)
     if _mutex_handle:
         _kernel32.CloseHandle(_mutex_handle)

@@ -172,6 +172,52 @@ class TestEnsureSingleInstance(unittest.TestCase):
         mock_store.assert_not_called()
 
     @patch(f'{MODULE}._terminate_pid')
+    @patch(f'{MODULE}._store_holder_info')
+    @patch(f'{MODULE}.ctypes')
+    def test_holder_exit_during_dialog_skips_terminate(self, mock_ctypes, mock_store, mock_terminate):
+        """If the old instance exited while the dialog was open, its (possibly
+        recycled) PID must not be terminated - that could kill an unrelated process."""
+        mock_ctypes.get_last_error.side_effect = [0xB7, 0]
+        mock_kernel32 = MagicMock()
+        mock_kernel32.CreateMutexW.return_value = 42
+
+        mock_user32 = MagicMock()
+        mock_user32.MessageBoxW.return_value = 6  # IDYES
+
+        with patch(f'{MODULE}._read_holder_info', side_effect=[(99999, '1.9.0'), (None, None)]), \
+             patch(f'{MODULE}._kernel32', mock_kernel32), \
+             patch(f'{MODULE}.ctypes.windll.user32', mock_user32):
+            from usage_monitor_for_claude.single_instance import ensure_single_instance
+            result = ensure_single_instance()
+
+        self.assertTrue(result)
+        mock_terminate.assert_not_called()
+        mock_store.assert_called_once()
+
+    @patch(f'{MODULE}._terminate_pid')
+    @patch(f'{MODULE}._store_holder_info')
+    @patch(f'{MODULE}.ctypes')
+    def test_new_holder_during_dialog_not_terminated(self, mock_ctypes, mock_store, mock_terminate):
+        """If a different instance took over while the dialog was open, neither
+        the stale PID nor the new holder is terminated."""
+        mock_ctypes.get_last_error.side_effect = [0xB7, 0xB7]
+        mock_kernel32 = MagicMock()
+        mock_kernel32.CreateMutexW.return_value = 42
+
+        mock_user32 = MagicMock()
+        mock_user32.MessageBoxW.return_value = 6  # IDYES
+
+        with patch(f'{MODULE}._read_holder_info', side_effect=[(99999, '1.9.0'), (55555, '1.9.1')]), \
+             patch(f'{MODULE}._kernel32', mock_kernel32), \
+             patch(f'{MODULE}.ctypes.windll.user32', mock_user32):
+            from usage_monitor_for_claude.single_instance import ensure_single_instance
+            result = ensure_single_instance()
+
+        self.assertFalse(result)
+        mock_terminate.assert_not_called()
+        mock_store.assert_not_called()
+
+    @patch(f'{MODULE}._terminate_pid')
     @patch(f'{MODULE}._read_holder_info', return_value=(None, None))
     @patch(f'{MODULE}._store_holder_info')
     @patch(f'{MODULE}.ctypes')
