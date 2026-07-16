@@ -634,6 +634,25 @@ class TestSettingsValidation(unittest.TestCase):
         self.assertEqual(result['on_reset_command'], ['echo hello'])
         mock.windll.user32.MessageBoxW.assert_not_called()
 
+    def test_command_empty_string_means_not_set(self):
+        """An empty command string disables the command like [] does - it must not
+        activate the command machinery (e.g. the deferred double-click handler)."""
+        result, mock = self._run_validate({'on_double_click_command': ''})
+        self.assertEqual(result['on_double_click_command'], [])
+        mock.windll.user32.MessageBoxW.assert_not_called()
+
+    def test_command_whitespace_string_means_not_set(self):
+        """A whitespace-only command string disables the command like [] does."""
+        result, mock = self._run_validate({'on_double_click_command': '   '})
+        self.assertEqual(result['on_double_click_command'], [])
+        mock.windll.user32.MessageBoxW.assert_not_called()
+
+    def test_command_list_with_empty_string_dropped(self):
+        """An array containing an empty command string is dropped with an error."""
+        result, mock = self._run_validate({'on_reset_command': ['echo hello', '']})
+        self.assertNotIn('on_reset_command', result)
+        mock.windll.user32.MessageBoxW.assert_called_once()
+
     def test_on_reset_command_list_valid(self):
         """Array of strings for on_reset_command passes through."""
         result, mock = self._run_validate({'on_reset_command': ['cmd1', 'cmd2']})

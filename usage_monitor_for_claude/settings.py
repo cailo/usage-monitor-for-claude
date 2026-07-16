@@ -162,10 +162,13 @@ def _validate(data: dict, path: Path) -> dict:
 
         elif key in _COMMAND_KEYS:
             if isinstance(value, str):
-                data[key] = [value]
+                # An empty or whitespace-only string means "not set" (like [])
+                # so it never activates the command machinery, e.g. the
+                # double-click handler with its deferred single click.
+                data[key] = [value] if value.strip() else []
             elif isinstance(value, list):
-                if any(not isinstance(item, str) for item in value):
-                    errors.append(f'  {key}: all items must be strings')
+                if any(not isinstance(item, str) or not item.strip() for item in value):
+                    errors.append(f'  {key}: all items must be non-empty strings')
                     drop.append(key)
             else:
                 errors.append(f'  {key}: expected a string or array of strings, got {type(value).__name__}')
