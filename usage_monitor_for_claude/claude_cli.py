@@ -67,18 +67,17 @@ _EXTENSION_PREFIX = 'anthropic.claude-code-'
 CHANGELOG_URL = 'https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md'
 PROJECT_URL = 'https://github.com/jens-duttke/usage-monitor-for-claude'
 
-__all__ = [
-    'CLAUDE_CLI_PATH', 'CHANGELOG_URL', 'PROJECT_URL', 'ClaudeInstallation', 'RefreshResult',
-    'active_cli_version', 'cli_version', 'find_installations', 'refresh_token',
-]
+__all__ = ['CLAUDE_CLI_PATH', 'CHANGELOG_URL', 'PROJECT_URL', 'ClaudeInstallation', 'RefreshResult', 'cli_version', 'find_installations', 'refresh_token']
 
 # Cache: path → (mtime, version) - avoids re-running subprocess when the binary hasn't changed
 _version_cache: dict[Path, tuple[float, str]] = {}
 
 # Cache for a custom cli_command version, keyed by the command tuple.  A custom
 # command (e.g. a WSL invocation) has no local file to stat for change
-# detection, so its version is cached for the process lifetime and refreshed by
-# refresh_token() when it installs a new version.
+# detection, so its version is cached for the process lifetime: updating that
+# CLI is picked up on the next app start.  Spawning it per read is not an
+# option - the popup re-reads on every data change, which would boot WSL every
+# few minutes.
 _command_version_cache: dict[tuple[str, ...], str] = {}
 
 
@@ -105,32 +104,33 @@ class RefreshResult:
 def find_installations() -> list[ClaudeInstallation]:
     """Discover Claude Code installations on the system.
 
-    Checks the native CLI path and common IDE extension directories.
-    Extension versions are extracted from directory names (no subprocess
-    needed).  The CLI version is read via ``claude --version``.  When a
-    custom ``cli_command`` is configured (e.g. a WSL install), it replaces
-    the auto-detected native binary - each configured entry is listed under
-    its own name.
+    Checks the native CLI path, any ``cli_command`` configured by the user
+    (e.g. a WSL install), and common IDE extension directories.  Extension
+    versions are extracted from directory names (no subprocess needed).
+    CLI versions are read via ``claude --version``.
 
     Returns
     -------
     list[ClaudeInstallation]
-        Found installations sorted by name, CLI first.
+        Found installations, native CLI first, then configured commands,
+        then IDE extensions.
     """
     results: list[ClaudeInstallation] = []
 
-    # Native CLI, or the configured custom command(s) when set
-    if CLI_COMMAND:
-        for name, command in CLI_COMMAND.items():
-            version = _command_version(command)
-            if version:
-                # A custom command has no single binary path; its last argument
-                # is the closest match (e.g. the claude path behind ``wsl``).
-                results.append(ClaudeInstallation(name, version, Path(command[-1])))
-    elif CLAUDE_CLI_PATH.is_file():
+    # Native CLI
+    if CLAUDE_CLI_PATH.is_file():
         version = cli_version(CLAUDE_CLI_PATH)
         if version:
             results.append(ClaudeInstallation('CLI', version, CLAUDE_CLI_PATH))
+
+    # Configured commands - listed in addition to the native CLI, which stays
+    # visible because it is the install this app authenticates and refreshes with
+    for name, command in CLI_COMMAND.items():
+        version = _command_version(command)
+        if version:
+            # A custom command has no single binary path; its last argument
+            # is the closest match (e.g. the claude path behind ``wsl``).
+            results.append(ClaudeInstallation(name, version, Path(command[-1])))
 
     # IDE extensions - extract version from directory name
     for ide_name, ext_dir in _EXTENSION_DIRS:
@@ -168,26 +168,23 @@ def find_installations() -> list[ClaudeInstallation]:
 def refresh_token() -> RefreshResult:
     """Run ``claude update`` to refresh the OAuth token.
 
-    Uses the configured custom ``cli_command`` when set (e.g. a WSL
-    install), otherwise the native CLI binary.  Parses the output to
-    detect whether an update was installed.
+    Uses the native CLI binary only - a ``cli_command`` entry is display
+    only.  The refresh works because the CLI renews the expired token in
+    the credentials file this app reads; a CLI behind ``cli_command``
+    (e.g. a WSL install) keeps its own credentials inside WSL and would
+    leave that file untouched, so the token would never change.
 
     Returns
     -------
     RefreshResult
         Outcome of the update attempt.
     """
-    command = _primary_cli_command()
-    if command is not None:
-        run_command = [*command, 'update']
-    elif CLAUDE_CLI_PATH.is_file():
-        run_command = [str(CLAUDE_CLI_PATH), 'update']
-    else:
+    if not CLAUDE_CLI_PATH.is_file():
         return RefreshResult(success=False, updated=False, old_version='', new_version='', error='CLI not found')
 
     try:
         proc = subprocess.run(
-            run_command,
+            [str(CLAUDE_CLI_PATH), 'update'],
             capture_output=True, text=True, timeout=60, creationflags=subprocess.CREATE_NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
@@ -200,10 +197,6 @@ def refresh_token() -> RefreshResult:
     # Parse: "Successfully updated from X.Y.Z to version A.B.C"
     update_match = re.search(r'updated from (\S+) to (?:version )?(\S+)', output)
     if update_match:
-        # A custom command has no file mtime that would reveal the new binary,
-        # so drop the cached version - the next read re-probes the updated CLI.
-        if command is not None:
-            _command_version_cache.pop(tuple(command), None)
         return RefreshResult(
             success=True, updated=True,
             old_version=update_match.group(1), new_version=update_match.group(2),
@@ -224,18 +217,6 @@ def refresh_token() -> RefreshResult:
         return RefreshResult(success=True, updated=False, old_version='', new_version='', error='')
 
     return RefreshResult(success=False, updated=False, old_version='', new_version='', error=output.strip()[:200])
-
-
-def active_cli_version() -> str:
-    """Return the version of the CLI the app treats as active, or ``''``.
-
-    Uses the configured custom ``cli_command`` (e.g. a WSL install) when
-    set, otherwise the auto-detected native binary.
-    """
-    command = _primary_cli_command()
-    if command is not None:
-        return _command_version(command)
-    return cli_version(CLAUDE_CLI_PATH)
 
 
 def cli_version(path: Path) -> str:
@@ -259,21 +240,6 @@ def cli_version(path: Path) -> str:
         return version
     except Exception:
         return ''
-
-
-def _primary_cli_command() -> list[str] | None:
-    """Return the base command of the first configured ``cli_command`` entry.
-
-    Returns
-    -------
-    list[str] | None
-        The first entry's command, or ``None`` when no custom command is
-        configured.  Used where a single CLI has to be picked (token
-        refresh, User-Agent); ``find_installations()`` lists every entry.
-    """
-    for command in CLI_COMMAND.values():
-        return command
-    return None
 
 
 def _command_version(command: list[str]) -> str:

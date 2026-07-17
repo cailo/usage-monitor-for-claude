@@ -48,13 +48,13 @@ When a background token refresh installs a new Claude CLI version, the app shows
 
 ## Claude CLI command
 
-By default the app auto-detects the native Windows `claude` binary to read its version, refresh the token when the session expires, and build the API `User-Agent`. If your real Claude Code install runs under WSL (or any custom launcher), the Windows binary can be missing or an outdated copy, so the popup would show the wrong version. Set `cli_command` to point everything at the install you actually use.
+The popup lists the Claude Code version of the native Windows CLI and of each IDE extension it finds. Installs it cannot see - most commonly a Claude Code running inside WSL - are missing from that list. Use `cli_command` to have their versions reported as well.
 
-The value is an object mapping a display name to the base command as an array of arguments (the app appends `--version` or `update` itself). When set, it fully replaces the auto-detected native CLI - IDE extension detection (VS Code, Cursor, Windsurf) is unaffected. Each entry is listed in the popup under its name; the first entry is also used for token refresh and the API `User-Agent`.
+The value is an object mapping a display name to the base command as an array of arguments (the app appends `--version` itself). Each entry is listed in the popup under the name you give it, **in addition to** the native CLI and the IDE extensions, which keep working exactly as before.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `cli_command` | *(auto-detected native binary)* | Object mapping a display name to a base command (array of strings) for a custom Claude CLI, e.g. a WSL install |
+| `cli_command` | *(none)* | Object mapping a display name to a base command (array of strings) whose Claude Code version is reported alongside the auto-detected ones, e.g. a WSL install |
 
 ```json
 {
@@ -63,6 +63,13 @@ The value is an object mapping a display name to the base command as an array of
     }
 }
 ```
+
+An entry only appears once its command reports a version, so if it stays missing, run the command yourself in a terminal - `wsl /home/<user>/.local/bin/claude --version` has to print a version number.
+
+Two things worth knowing:
+
+- **This setting is display only.** It reports a version and nothing else. Automatic token refresh keeps using the native Windows CLI, because that is the install whose credentials this app reads - a Claude Code inside WSL keeps its own credentials there.
+- **The version is read once per app start.** A custom command has no local file whose timestamp could reveal an update, and re-running it on every refresh would start WSL every few minutes. After updating Claude Code inside WSL, restart the app to see the new version.
 
 ## Tooltip fields
 

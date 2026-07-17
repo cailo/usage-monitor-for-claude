@@ -513,131 +513,117 @@ class TestFindInstallationsCliCommand(unittest.TestCase):
     """Tests for find_installations() with a configured cli_command."""
 
     @patch('usage_monitor_for_claude.claude_cli._command_version', return_value='2.1.204')
+    @patch('usage_monitor_for_claude.claude_cli.cli_version', return_value='')
+    @patch('usage_monitor_for_claude.claude_cli.CLAUDE_CLI_PATH')
     @patch('usage_monitor_for_claude.claude_cli.CLI_COMMAND', {'WSL': ['wsl', '/home/user/.local/bin/claude']})
     @patch('usage_monitor_for_claude.claude_cli._EXTENSION_DIRS', [])
-    def test_custom_command_listed(self, _mock_version):
+    def test_custom_command_listed(self, mock_cli_path, _mock_cli_version, _mock_cmd_version):
         """A configured cli_command appears as an installation under its name."""
+        mock_cli_path.is_file.return_value = False
         result = find_installations()
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].name, 'WSL')
         self.assertEqual(result[0].version, '2.1.204')
 
-    @patch('usage_monitor_for_claude.claude_cli.cli_version')
     @patch('usage_monitor_for_claude.claude_cli._command_version', return_value='2.1.204')
+    @patch('usage_monitor_for_claude.claude_cli.cli_version', return_value='2.1.177')
     @patch('usage_monitor_for_claude.claude_cli.CLAUDE_CLI_PATH')
     @patch('usage_monitor_for_claude.claude_cli.CLI_COMMAND', {'WSL': ['wsl', 'claude']})
     @patch('usage_monitor_for_claude.claude_cli._EXTENSION_DIRS', [])
-    def test_custom_command_replaces_native(self, mock_cli_path, _mock_cmd_version, mock_cli_version):
-        """A configured cli_command replaces the auto-detected native CLI entirely."""
+    def test_listed_in_addition_to_native(self, mock_cli_path, _mock_cli_version, _mock_cmd_version):
+        """A cli_command is listed in addition to the native CLI, which stays visible
+        because it is the install the app authenticates and refreshes with."""
         mock_cli_path.is_file.return_value = True
         result = find_installations()
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0].name, 'WSL')
-        mock_cli_version.assert_not_called()
+        self.assertEqual([(i.name, i.version) for i in result], [('CLI', '2.1.177'), ('WSL', '2.1.204')])
 
     @patch('usage_monitor_for_claude.claude_cli._command_version', return_value='')
+    @patch('usage_monitor_for_claude.claude_cli.cli_version', return_value='2.1.177')
+    @patch('usage_monitor_for_claude.claude_cli.CLAUDE_CLI_PATH')
     @patch('usage_monitor_for_claude.claude_cli.CLI_COMMAND', {'WSL': ['wsl', 'claude']})
     @patch('usage_monitor_for_claude.claude_cli._EXTENSION_DIRS', [])
-    def test_custom_command_version_fails_not_listed(self, _mock_version):
-        """A cli_command whose version cannot be read is not listed."""
+    def test_custom_command_version_fails_native_kept(self, mock_cli_path, _mock_cli_version, _mock_cmd_version):
+        """A cli_command whose version cannot be read is skipped without hiding the native CLI."""
+        mock_cli_path.is_file.return_value = True
         result = find_installations()
-        self.assertEqual(result, [])
+        self.assertEqual([i.name for i in result], ['CLI'])
 
     @patch('usage_monitor_for_claude.claude_cli._command_version', return_value='2.1.204')
+    @patch('usage_monitor_for_claude.claude_cli.cli_version', return_value='')
+    @patch('usage_monitor_for_claude.claude_cli.CLAUDE_CLI_PATH')
     @patch('usage_monitor_for_claude.claude_cli.CLI_COMMAND', {'WSL': ['wsl', 'claude'], 'WSL Ubuntu': ['wsl', '-d', 'Ubuntu', 'claude']})
     @patch('usage_monitor_for_claude.claude_cli._EXTENSION_DIRS', [])
-    def test_multiple_commands_all_listed(self, _mock_version):
-        """Every configured cli_command entry is listed in its own name."""
+    def test_multiple_commands_all_listed(self, mock_cli_path, _mock_cli_version, _mock_cmd_version):
+        """Every configured cli_command entry is listed under its own name."""
+        mock_cli_path.is_file.return_value = False
         result = find_installations()
         self.assertEqual([i.name for i in result], ['WSL', 'WSL Ubuntu'])
 
     @patch('usage_monitor_for_claude.claude_cli._command_version', return_value='2.1.204')
+    @patch('usage_monitor_for_claude.claude_cli.cli_version', return_value='2.1.177')
+    @patch('usage_monitor_for_claude.claude_cli.CLAUDE_CLI_PATH')
     @patch('usage_monitor_for_claude.claude_cli.CLI_COMMAND', {'WSL': ['wsl', 'claude']})
-    def test_custom_command_and_extensions_combined(self, _mock_version):
-        """A cli_command replaces only the native CLI - IDE extensions are still detected."""
+    def test_native_command_and_extensions_all_listed(self, mock_cli_path, _mock_cli_version, _mock_cmd_version):
+        """All three sources appear together, native CLI first, then the configured
+        command, then IDE extensions."""
+        mock_cli_path.is_file.return_value = True
         with TemporaryDirectory() as tmp:
             ext_dir = Path(tmp)
             (ext_dir / 'anthropic.claude-code-2.1.68-win32-x64').mkdir()
             with patch('usage_monitor_for_claude.claude_cli._EXTENSION_DIRS', [('VS Code', ext_dir)]):
                 result = find_installations()
-        self.assertEqual([i.name for i in result], ['WSL', 'VS Code'])
+        self.assertEqual([i.name for i in result], ['CLI', 'WSL', 'VS Code'])
 
 
-class TestActiveCliVersion(unittest.TestCase):
-    """Tests for active_cli_version()."""
+class TestRefreshTokenIgnoresCliCommand(unittest.TestCase):
+    """Tests that refresh_token() never runs a configured cli_command.
 
-    @patch('usage_monitor_for_claude.claude_cli._command_version', return_value='2.1.204')
-    @patch('usage_monitor_for_claude.claude_cli.CLI_COMMAND', {'WSL': ['wsl', 'claude']})
-    def test_uses_custom_command(self, mock_cmd_version):
-        """With a cli_command set, the custom command's version is returned."""
-        self.assertEqual(claude_cli.active_cli_version(), '2.1.204')
-        mock_cmd_version.assert_called_once_with(['wsl', 'claude'])
-
-    @patch('usage_monitor_for_claude.claude_cli.cli_version', return_value='2.1.69')
-    @patch('usage_monitor_for_claude.claude_cli.CLI_COMMAND', {})
-    def test_falls_back_to_native(self, mock_cli_version):
-        """Without a cli_command, the native binary version is returned."""
-        self.assertEqual(claude_cli.active_cli_version(), '2.1.69')
-        mock_cli_version.assert_called_once_with(claude_cli.CLAUDE_CLI_PATH)
-
-
-class TestRefreshTokenCliCommand(unittest.TestCase):
-    """Tests for refresh_token() with a configured cli_command."""
+    The refresh only works as a side effect: the CLI renews the expired token
+    in the credentials file this app reads.  A CLI behind cli_command (e.g. a
+    WSL install) keeps its own credentials inside WSL, so refreshing through it
+    would leave that file untouched and could never renew the token.
+    """
 
     def setUp(self):
         claude_cli._command_version_cache.clear()
 
     @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
+    @patch('usage_monitor_for_claude.claude_cli.CLAUDE_CLI_PATH')
     @patch('usage_monitor_for_claude.claude_cli.CLI_COMMAND', {'WSL': ['wsl', '/home/user/.local/bin/claude']})
-    def test_runs_custom_command_update(self, mock_run):
-        """refresh_token runs '<cli_command> update' when configured."""
-        mock_run.return_value = MagicMock(stdout='Claude Code is up to date (2.1.204)', stderr='', returncode=0)
+    def test_uses_native_binary_despite_cli_command(self, mock_path, mock_run):
+        """A configured cli_command must not divert the token refresh to WSL."""
+        mock_path.is_file.return_value = True
+        mock_path.__str__.return_value = r'C:\npm\claude.cmd'
+        mock_run.return_value = MagicMock(stdout='Claude Code is up to date (2.1.177)', stderr='', returncode=0)
         result = refresh_token()
         self.assertTrue(result.success)
-        self.assertEqual(mock_run.call_args[0][0], ['wsl', '/home/user/.local/bin/claude', 'update'])
+        self.assertEqual(mock_run.call_args[0][0], [r'C:\npm\claude.cmd', 'update'])
 
     @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
+    @patch('usage_monitor_for_claude.claude_cli.CLAUDE_CLI_PATH')
     @patch('usage_monitor_for_claude.claude_cli.CLI_COMMAND', {'WSL': ['wsl', 'claude']})
-    def test_update_drops_stale_version_cache(self, mock_run):
-        """A successful update drops the cached version - a custom command has no
-        mtime to invalidate it, so the stale version would otherwise stick."""
-        claude_cli._command_version_cache[('wsl', 'claude')] = '2.1.177'
-        mock_run.return_value = MagicMock(
-            stdout='Successfully updated from 2.1.177 to version 2.1.204', stderr='', returncode=0,
-        )
+    def test_no_native_binary_reports_not_found(self, mock_path, mock_run):
+        """Without a native binary the refresh reports 'CLI not found' rather than
+        falling back to the cli_command, which owns different credentials."""
+        mock_path.is_file.return_value = False
         result = refresh_token()
-        self.assertTrue(result.updated)
-        self.assertEqual(result.new_version, '2.1.204')
-        self.assertNotIn(('wsl', 'claude'), claude_cli._command_version_cache)
+        self.assertFalse(result.success)
+        self.assertEqual(result.error, 'CLI not found')
+        mock_run.assert_not_called()
 
     @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
+    @patch('usage_monitor_for_claude.claude_cli.CLAUDE_CLI_PATH')
     @patch('usage_monitor_for_claude.claude_cli.CLI_COMMAND', {'WSL': ['wsl', 'claude']})
-    def test_version_reprobed_after_update(self, mock_run):
-        """After an update the next version read reports the newly installed version."""
-        claude_cli._command_version_cache[('wsl', 'claude')] = '2.1.177'
-        mock_run.return_value = MagicMock(
-            stdout='Successfully updated from 2.1.177 to version 2.1.204', stderr='', returncode=0,
-        )
-        refresh_token()
-        mock_run.return_value = MagicMock(stdout='2.1.204 (Claude Code)\n', returncode=0)
-        self.assertEqual(claude_cli.active_cli_version(), '2.1.204')
-
-    @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
-    @patch('usage_monitor_for_claude.claude_cli.CLI_COMMAND', {'WSL': ['wsl', 'claude']})
-    def test_up_to_date_keeps_version_cache(self, mock_run):
-        """An 'up to date' run installs nothing, so the cached version is kept."""
+    def test_native_update_leaves_command_version_cache(self, mock_path, mock_run):
+        """A native update must not touch the custom command's cached version - the
+        two installs update independently."""
+        mock_path.is_file.return_value = True
         claude_cli._command_version_cache[('wsl', 'claude')] = '2.1.204'
-        mock_run.return_value = MagicMock(stdout='Claude Code is up to date (2.1.204)', stderr='', returncode=0)
+        mock_run.return_value = MagicMock(
+            stdout='Successfully updated from 2.1.177 to version 2.1.178', stderr='', returncode=0,
+        )
         refresh_token()
         self.assertEqual(claude_cli._command_version_cache[('wsl', 'claude')], '2.1.204')
-
-    @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
-    @patch('usage_monitor_for_claude.claude_cli.CLI_COMMAND', {'WSL': ['wsl', 'claude']})
-    def test_command_set_bypasses_cli_not_found(self, mock_run):
-        """With a cli_command set, the native 'CLI not found' path is never taken."""
-        mock_run.return_value = MagicMock(stdout='updated from 2.1.1 to version 2.1.2', stderr='', returncode=0)
-        result = refresh_token()
-        self.assertNotEqual(result.error, 'CLI not found')
 
 
 if __name__ == '__main__':

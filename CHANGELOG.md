@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - [Multi-account support](https://github.com/jens-duttke/usage-monitor-for-claude/discussions/23) - launch additional instances with `--config-dir="<path>"` to monitor a second Claude account side by side; each instance reads its own credentials and settings, gets its own tray tooltip prefix and autostart entry, and keeps its `--config-dir` across restarts (thanks to [@hybrid2102](https://github.com/hybrid2102) for the contribution)
-- [Custom CLI command](https://github.com/jens-duttke/usage-monitor-for-claude/issues/65) - set `cli_command` (e.g. `{"WSL": ["wsl", "/home/<user>/.local/bin/claude"]}`) to read the Claude Code version, refresh the token, and build the API User-Agent from a WSL (or otherwise custom) install instead of the Windows binary, so the popup shows the version you actually use
+- [Custom CLI command](https://github.com/jens-duttke/usage-monitor-for-claude/issues/65) - set `cli_command` (e.g. `{"WSL": ["wsl", "/home/<user>/.local/bin/claude"]}`) to list the Claude Code version of an install the app cannot detect on its own, such as one running inside WSL, alongside the native CLI and the IDE extensions
 
 ### Changed
 

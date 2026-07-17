@@ -384,9 +384,10 @@ def _detect_system_time_format() -> str:
 _SYSTEM_TIME_FORMAT = _detect_system_time_format()
 TIME_FORMAT: str = _S.get('time_format', _SYSTEM_TIME_FORMAT)
 
-# Custom Claude CLI command(s) - name -> base command (e.g. run the version
-# check and update inside WSL).  When set, this replaces the auto-detected
-# native binary for version display, token refresh, and the API User-Agent.
+# Extra Claude CLI command(s) to report a version for - name -> base command
+# (e.g. run the version check inside WSL).  Display only: these are listed in
+# addition to the auto-detected native binary and the IDE extensions, and never
+# take part in authentication (see claude_cli.py).
 CLI_COMMAND: dict[str, list[str]] = _S.get('cli_command', {})
 
 # Event commands
