@@ -27,16 +27,34 @@ def _reset_globals():
 # ---------------------------------------------------------------------------
 
 class TestSharedMemoryRoundTrip(unittest.TestCase):
-    """Verify _store_holder_info / _read_holder_info write and read correctly."""
+    """Verify _store_holder_info / _read_holder_info write and read correctly.
+
+    These tests create real kernel objects, so they run under a name that is
+    unique to this test process - the production name belongs to whatever app
+    instance is running on the same machine.
+    """
 
     def setUp(self):
         _reset_globals()
+        self._isolated_names = patch(f'{MODULE}.config_dir_suffix', return_value=f'_test{os.getpid()}')
+        self._isolated_names.start()
 
     def tearDown(self):
         import usage_monitor_for_claude.single_instance as si
         if si._pid_mapping_handle:
             si._kernel32.CloseHandle(si._pid_mapping_handle)
             si._pid_mapping_handle = None
+        self._isolated_names.stop()
+
+    def _live_record(self):
+        """Read the holder record under the real (non-test) object name."""
+        import usage_monitor_for_claude.single_instance as si
+
+        self._isolated_names.stop()
+        try:
+            return si._read_holder_info()
+        finally:
+            self._isolated_names.start()
 
     @patch(f'{MODULE}.__version__', '2.5.3')
     def test_round_trip_returns_pid_and_version(self):
@@ -69,6 +87,20 @@ class TestSharedMemoryRoundTrip(unittest.TestCase):
         self.assertEqual(pid, os.getpid())
         self.assertIsNotNone(version)
         self.assertTrue(len(version) < 100)
+
+    def test_store_does_not_touch_the_live_holder_record(self):
+        """The shared memory is a machine-wide named object, so a test run must
+        never write under the real name: it would replace the PID and version of
+        an app instance running on the same machine with the test process's own.
+        The record then outlives the test process (the live instance keeps the
+        mapping alive), and a later "replace running instance" targets a dead PID
+        and fails."""
+        import usage_monitor_for_claude.single_instance as si
+
+        before = self._live_record()
+        si._store_holder_info()
+
+        self.assertEqual(self._live_record(), before)
 
 
 # ---------------------------------------------------------------------------
