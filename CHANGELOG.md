@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+[Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.20.0...HEAD)
+
+## [1.20.0] - 2026-07-17
+
 ### Added
 
 - [Multi-account support](https://github.com/jens-duttke/usage-monitor-for-claude/discussions/23) - launch additional instances with `--config-dir="<path>"` to monitor a second Claude account side by side; each instance reads its own credentials and settings, gets its own tray tooltip prefix and autostart entry, and keeps its `--config-dir` across restarts (thanks to [@hybrid2102](https://github.com/hybrid2102) for the contribution)
@@ -49,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The popup's time marker and day dividers no longer shift by one pixel (with a visible slide animation on the marker) after the first live data update
 - [Notification icon](https://github.com/jens-duttke/usage-monitor-for-claude/issues/67) - alerts and reset notifications now show the app logo instead of the current tray icon, so the icon no longer says "you have nothing left" when a limit was just reset or is only partway used
 
-[Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...HEAD)
+[Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.19.0...v1.20.0)
 
 ## [1.19.0] - 2026-07-14
 
