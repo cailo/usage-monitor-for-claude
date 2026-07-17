@@ -28,7 +28,7 @@ from .instance_id import effective_config_dir, is_default_config_dir
 __all__ = [
     'ALERT_TIME_AWARE', 'ALERT_TIME_AWARE_BELOW',
     'BAR_BG', 'BAR_DIVIDER', 'BAR_FG', 'BAR_FG_WARN', 'BAR_MARKER', 'BG',
-    'COMPACT_HIDE', 'CURRENCY_SYMBOL',
+    'CLI_COMMAND', 'COMPACT_HIDE', 'CURRENCY_SYMBOL',
     'FG', 'FG_DIM', 'FG_HEADING', 'FG_LINK',
     'ICON_DARK', 'ICON_FIELDS', 'ICON_LIGHT', 'IDLE_PAUSE',
     'LANGUAGE', 'MAX_BACKOFF', 'NOTIFY_CLAUDE_UPDATE',
@@ -246,6 +246,26 @@ def _validate(data: dict, path: Path) -> dict:
                     errors.append(f'  {key}.{k}: expected [R, G, B, A] with integers 0\u2013255')
                     del value[k]
 
+        elif key == 'cli_command':
+            # An empty object is valid and means "not set" - the native CLI
+            # auto-detection stays active.
+            if not isinstance(value, dict):
+                errors.append(f'  {key}: expected an object mapping a name to a command array, got {type(value).__name__}')
+                drop.append(key)
+            else:
+                invalid = False
+                for name, command in value.items():
+                    if not name.strip():
+                        errors.append(f'  {key}: names must be non-empty strings')
+                        invalid = True
+                        break
+                    if not isinstance(command, list) or not command or any(not isinstance(item, str) or not item.strip() for item in command):
+                        errors.append(f'  {key}.{name}: expected a non-empty array of non-empty strings')
+                        invalid = True
+                        break
+                if invalid:
+                    drop.append(key)
+
     for key in drop:
         del data[key]
 
@@ -363,6 +383,11 @@ def _detect_system_time_format() -> str:
 
 _SYSTEM_TIME_FORMAT = _detect_system_time_format()
 TIME_FORMAT: str = _S.get('time_format', _SYSTEM_TIME_FORMAT)
+
+# Custom Claude CLI command(s) - name -> base command (e.g. run the version
+# check and update inside WSL).  When set, this replaces the auto-detected
+# native binary for version display, token refresh, and the API User-Agent.
+CLI_COMMAND: dict[str, list[str]] = _S.get('cli_command', {})
 
 # Event commands
 ON_DOUBLE_CLICK_COMMAND: list[str] = _S.get('on_double_click_command', [])

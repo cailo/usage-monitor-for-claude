@@ -46,6 +46,24 @@ When a background token refresh installs a new Claude CLI version, the app shows
 |-----|---------|-------------|
 | `notify_claude_update` | `true` | Show a notification when a background token refresh installs a new Claude CLI version |
 
+## Claude CLI command
+
+By default the app auto-detects the native Windows `claude` binary to read its version, refresh the token when the session expires, and build the API `User-Agent`. If your real Claude Code install runs under WSL (or any custom launcher), the Windows binary can be missing or an outdated copy, so the popup would show the wrong version. Set `cli_command` to point everything at the install you actually use.
+
+The value is an object mapping a display name to the base command as an array of arguments (the app appends `--version` or `update` itself). When set, it fully replaces the auto-detected native CLI - IDE extension detection (VS Code, Cursor, Windsurf) is unaffected. Each entry is listed in the popup under its name; the first entry is also used for token refresh and the API `User-Agent`.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `cli_command` | *(auto-detected native binary)* | Object mapping a display name to a base command (array of strings) for a custom Claude CLI, e.g. a WSL install |
+
+```json
+{
+    "cli_command": {
+        "WSL": ["wsl", "/home/<user>/.local/bin/claude"]
+    }
+}
+```
+
 ## Tooltip fields
 
 The tray tooltip shows a quick usage summary when you hover over the icon. By default, it displays the session (5h) and weekly (7d) quotas. Use `tooltip_fields` to choose which usage fields appear in the tooltip.

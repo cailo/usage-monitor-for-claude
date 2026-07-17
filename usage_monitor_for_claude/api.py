@@ -185,9 +185,9 @@ def _model_slug(display_name: str) -> str:
 
 def _user_agent() -> str:
     """Return the User-Agent string with the installed Claude Code version."""
-    from .claude_cli import CLAUDE_CLI_PATH, cli_version
+    from .claude_cli import active_cli_version
 
-    version = cli_version(CLAUDE_CLI_PATH)
+    version = active_cli_version()
     return f'claude-code/{version}' if version else _FALLBACK_USER_AGENT
 
 

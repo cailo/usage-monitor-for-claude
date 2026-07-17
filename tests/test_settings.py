@@ -718,6 +718,56 @@ class TestSettingsValidation(unittest.TestCase):
         self.assertNotIn('on_double_click_command', result)
         mock.windll.user32.MessageBoxW.assert_called_once()
 
+    # cli_command validation (object mapping a name to a command array)
+
+    def test_cli_command_valid(self):
+        """Valid object mapping a name to a command array passes through."""
+        result, mock = self._run_validate({'cli_command': {'WSL': ['wsl', '/home/user/.local/bin/claude']}})
+        self.assertEqual(result['cli_command'], {'WSL': ['wsl', '/home/user/.local/bin/claude']})
+        mock.windll.user32.MessageBoxW.assert_not_called()
+
+    def test_cli_command_empty_object_means_not_set(self):
+        """An empty object is valid and leaves the native CLI auto-detection active."""
+        result, mock = self._run_validate({'cli_command': {}})
+        self.assertEqual(result['cli_command'], {})
+        mock.windll.user32.MessageBoxW.assert_not_called()
+
+    def test_cli_command_not_object_dropped(self):
+        """Non-object value is dropped with an error."""
+        result, mock = self._run_validate({'cli_command': ['wsl', 'claude']})
+        self.assertNotIn('cli_command', result)
+        mock.windll.user32.MessageBoxW.assert_called_once()
+
+    def test_cli_command_empty_name_dropped(self):
+        """An empty name key is dropped with an error."""
+        result, mock = self._run_validate({'cli_command': {'   ': ['wsl', 'claude']}})
+        self.assertNotIn('cli_command', result)
+        mock.windll.user32.MessageBoxW.assert_called_once()
+
+    def test_cli_command_empty_array_dropped(self):
+        """An empty command array is dropped with an error."""
+        result, mock = self._run_validate({'cli_command': {'WSL': []}})
+        self.assertNotIn('cli_command', result)
+        mock.windll.user32.MessageBoxW.assert_called_once()
+
+    def test_cli_command_non_array_value_dropped(self):
+        """A non-array command value is dropped with an error."""
+        result, mock = self._run_validate({'cli_command': {'WSL': 'wsl claude'}})
+        self.assertNotIn('cli_command', result)
+        mock.windll.user32.MessageBoxW.assert_called_once()
+
+    def test_cli_command_array_with_empty_string_dropped(self):
+        """A command array containing an empty string is dropped with an error."""
+        result, mock = self._run_validate({'cli_command': {'WSL': ['wsl', '']}})
+        self.assertNotIn('cli_command', result)
+        mock.windll.user32.MessageBoxW.assert_called_once()
+
+    def test_cli_command_array_with_non_string_dropped(self):
+        """A command array containing a non-string element is dropped with an error."""
+        result, mock = self._run_validate({'cli_command': {'WSL': ['wsl', 42]}})
+        self.assertNotIn('cli_command', result)
+        mock.windll.user32.MessageBoxW.assert_called_once()
+
     def _run_validate(self, data: dict) -> tuple[dict, MagicMock]:
         """Run _validate with mocked ctypes and return (result, mock_ctypes)."""
         mock_ctypes = MagicMock()
