@@ -36,10 +36,14 @@ def _make_app(thresholds: list[float] | None = None) -> UsageMonitorForClaude:
     # Patches active for the app's lifetime, stopped by _cleanup.  The presence
     # defaults keep _is_user_away() False so notification tests are deterministic
     # regardless of the real machine's idle/lock state (idle/lock tests override).
+    # ICON_FIELDS is pinned to its default so render tests do not inherit a
+    # usage-monitor-settings.json present on the machine running the suite
+    # (tests for custom fields override it per test).
     app._patches = [
         patch('usage_monitor_for_claude.app.get_alert_thresholds', return_value=thresholds),
         patch('usage_monitor_for_claude.app.is_workstation_locked', return_value=False),
         patch('usage_monitor_for_claude.app.get_idle_seconds', return_value=0.0),
+        patch('usage_monitor_for_claude.app.ICON_FIELDS', ['five_hour', 'seven_day']),
     ]
     for active_patch in app._patches:
         active_patch.start()
