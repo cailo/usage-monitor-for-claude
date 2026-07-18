@@ -122,6 +122,7 @@ Prioritize readability and auditability - users handle credentials and must be a
 
 ## README
 - Keep the feature list and descriptions in `README.md` in sync when adding, changing, or removing user-facing features
+- When adding or removing a `locale/*.json` file, update the language count and the parenthesized list in the "N languages (...)" feature bullet to match the actual locale files - both the number and the names must stay in sync
 - The feature list follows the user's decision journey - place new features in the appropriate tier:
   1. **Getting started** (barrier to entry): Portable, Zero configuration
   2. **Daily visible value** (what the user sees every day): Live tray icon, Detail popup, Claude Code versions
@@ -135,18 +136,11 @@ Prioritize readability and auditability - users handle credentials and must be a
 ## Changelog
 - Update `CHANGELOG.md` for every user-facing change (new features, bug fixes, behavior changes, UI changes)
 - Do not add changelog entries for internal refactors, code style changes, or documentation-only changes unless they affect the user
-- Changes to `CLAUDE.md` are invisible to users - never mention them in changelog entries or commit messages
-- Add entries under the `## [Unreleased]` section, grouped by: Added, Changed, Fixed, Removed
-- Write entries from the user's perspective - describe what changed, not how the code changed
-- One bullet point per logical change; keep it concise (one sentence)
-- When a change implements a GitHub Discussion or resolves a GitHub Issue, link it on the entry text (e.g. `- [Feature name](https://github.com/.../discussions/12) - description`)
-- Changelog entries describe changes relative to the latest release tag, not intermediate commits - do not mention bugs that were introduced and fixed within the same unreleased period
-- Before writing a changelog entry for a fix, check `git log` to verify the bug existed in the latest release - if it was introduced after the release tag, it does not get a changelog entry
+- Changes to `CLAUDE.md` and the `.claude/commands/` files are invisible to users - never mention them in changelog entries or commit messages
+- Use the `/changelog` command to write the entry - it holds the format, grouping (Added/Changed/Fixed/Removed), user-perspective wording, issue/discussion linking, and the "did the bug ship in the last release?" check
 
 ## Releasing
-- Update `__version__` in `usage_monitor_for_claude/__init__.py` and all four version fields in `version_info.py` (`filevers`, `prodvers`, `FileVersion`, `ProductVersion`)
-- In `CHANGELOG.md`: rename `## [Unreleased]` to `## [x.y.z] - YYYY-MM-DD`, add a fresh empty `## [Unreleased]` section above it, and update the compare links
-- GitHub release notes (`gh release create vX.Y.Z dist/UsageMonitorForClaude.exe --title "vX.Y.Z" --notes "..."`) must use the exact content from the version's `CHANGELOG.md` section (the `### Added` / `### Changed` / `### Fixed` / `### Removed` blocks), followed by a `[Full changelog](compare-url)` link and a `[README for this version](https://github.com/jens-duttke/usage-monitor-for-claude/blob/vX.Y.Z/README.md)` link
+- Cut releases with the `/releasing` command - it bumps the version (`__version__` in `usage_monitor_for_claude/__init__.py` plus all four fields in `version_info.py`), rolls `CHANGELOG.md`, runs the tests, and prepares the `gh release create` notes. Per the git rule it never tags or publishes - it hands the final command to you to run
 
 ## Testing
 - After completing all changes, run the full test suite (`python -m unittest discover -s tests`) and ensure all tests pass - this applies to any change (code, locale files, config, data files), not just Python modules
