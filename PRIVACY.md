@@ -24,6 +24,19 @@ The application reads your existing Claude OAuth token from the local Claude CLI
 The application does not write any files. All usage data is kept in memory only and discarded when
 the application closes. An optional settings file (`usage-monitor-settings.json`) is read-only.
 
+Two values are written to the Windows registry, both under `HKEY_CURRENT_USER`:
+
+- `Software\Classes\AppUserModelId\JensDuttke.UsageMonitorForClaude` - the display name and icon
+  shown in the header of the application's notifications. Re-registered on every start.
+- `Software\Microsoft\Windows\CurrentVersion\Run` - the autostart entry. Written only when you
+  enable autostart from the tray menu, removed when you disable it again.
+
+## Claude Code Installation
+
+When the OAuth token has expired, the application runs `claude update` so that the Claude Code CLI
+renews the token in its own credentials file. As a side effect of that command, a newer Claude Code
+version may be installed. No other software on your system is modified.
+
 ## Third-Party Services
 
 The application does not integrate with any analytics, tracking, advertising, or telemetry services.

@@ -59,7 +59,7 @@ Prioritize readability and auditability - users handle credentials and must be a
 - All URLs and API endpoints as top-level constants - no dynamic URL construction
 - Network communication exclusively with `api.anthropic.com` - no other destinations
 - Credentials used only in HTTP Authorization headers - never log, store, or transmit elsewhere
-- No file write operations - the app is read-only
+- No file write operations - the app writes no files. The only system state it changes is two `HKCU` registry values: the notification identity (`notification_identity.py`) and the autostart entry (`autostart.py`). Any new persistent write needs a matching update in `README.md` and `PRIVACY.md` - the "writes no files" claim is part of the audit story and must never become inaccurate
 - No `eval()`, `exec()`, `compile()`, or dynamic imports - no dynamic code execution
 - No obfuscation - no base64-encoded strings, no encoded URLs or tokens
 - Modular package architecture in `usage_monitor_for_claude/` - small focused modules are easier to audit than one large file

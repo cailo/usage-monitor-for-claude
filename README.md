@@ -40,7 +40,7 @@ This tool handles your Claude Code OAuth token, so you should be able to verify 
 
 - **Single network destination** - communicates exclusively with `api.anthropic.com`, no other hosts
 - **Credentials stay local** - the OAuth token is used only in HTTP Authorization headers, never logged, stored elsewhere, or transmitted to third parties
-- **Read-only** - the app never writes files to disk
+- **Writes no files** - the app never writes files to disk. The only lasting changes on your system are two `HKEY_CURRENT_USER` registry values: the toast notification identity (display name and icon, re-registered on every start) and the autostart entry, written only when you enable autostart. An expired OAuth token additionally triggers `claude update`, which may install a newer Claude Code version
 - **No dynamic code execution** - no `eval()`, `exec()`, `compile()`, or dynamic imports
 - **No obfuscation** - no encoded strings, no hidden URLs, no minified logic
 - **Modular architecture** - small, focused modules with security-critical code (credentials, API calls) isolated in a single file ([`api.py`](usage_monitor_for_claude/api.py))
@@ -206,7 +206,7 @@ New features should follow the existing architecture. Key points from the guidel
 - Security-critical code (credentials, API calls) stays isolated in [`api.py`](usage_monitor_for_claude/api.py)
 - All user-facing changes need updates in [`CHANGELOG.md`](CHANGELOG.md), [`README.md`](README.md), and [`docs/configuration.md`](docs/configuration.md) where applicable
 - Tests are required - run `python -m unittest discover -s tests` before committing
-- The app is read-only and must never write files to disk
+- The app must never write files to disk - the only system state it changes is the two documented `HKEY_CURRENT_USER` registry values (notification identity, autostart entry)
 
 </details>
 
