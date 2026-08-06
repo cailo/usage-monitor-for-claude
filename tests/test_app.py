@@ -2723,6 +2723,41 @@ class TestPollLoopAccountSwitch(unittest.TestCase):
         # Initial error poll, then an immediate (non-forced) retry on the new token.
         self.assertEqual(force_calls, [False, False])
 
+    @patch('usage_monitor_for_claude.app.time.time', return_value=100.0)
+    def test_switch_during_update_forces_next_poll(self, _mock_time):
+        """A switch landing while the fetch is in flight still forces an immediate update.
+
+        The token baseline is read before update(), so a switch that happens
+        during the request is not already part of the baseline.
+        """
+        force_calls = []
+        ticks = []
+        switched = False
+
+        def update_side_effect(force=False):
+            nonlocal switched
+            force_calls.append(force)
+            # The user switches accounts while this request is in flight.
+            switched = True
+            if len(force_calls) >= 2:
+                self.app.running = False
+
+        def sleep_side_effect(_seconds):
+            ticks.append(1)
+            if len(ticks) >= 3:
+                self.app.running = False
+
+        with patch.object(self.app, 'update', side_effect=update_side_effect), \
+             patch.object(self.app, '_calculate_poll_interval', return_value=180), \
+             patch.object(self.app, '_account_switched', return_value=True), \
+             patch.object(self.app, '_is_user_away', return_value=False), \
+             patch.object(self.app, '_seconds_until_next_reset', return_value=None), \
+             patch('usage_monitor_for_claude.app.time.sleep', side_effect=sleep_side_effect), \
+             patch('usage_monitor_for_claude.app.read_access_token', side_effect=lambda: 'tok-b' if switched else 'tok-a'):
+            self.app.poll_loop()
+
+        self.assertEqual(force_calls, [False, True])
+
 
 class TestIdleResetPendingCleared(unittest.TestCase):
     """Tests for _idle_reset_pending being cleared on confirmed usage drop."""
@@ -3016,6 +3051,93 @@ class TestAccountSwitchDetection(unittest.TestCase):
         # The old baseline is kept so the comparison can resume once the
         # account identity is known again.
         self.assertEqual(self.app._prev_utilization, {'five_hour': 97.0})
+
+    @patch('usage_monitor_for_claude.app.read_access_token', return_value='tok-new')
+    @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
+    @patch('usage_monitor_for_claude.app.create_icon_image')
+    def test_switch_during_fetch_defers_detection(self, _icon, _tooltip, _token):
+        """Usage fetched before the switch is not paired with the new account's profile.
+
+        Announcing the switch here would show the new account's name next to
+        the old account's numbers and burn the UUID baseline, so the stale
+        data would survive until the next regular poll.
+        """
+        data = {'five_hour': {'utilization': 10.0}}
+        self.app._prev_account_uuid = 'uuid-old'
+        self.app._prev_utilization = {'five_hour': 97.0}
+        mock = self._make_cache_mock('uuid-new', 'new@example.com', data)
+        mock.update.return_value = UpdateResult(data=data, token='tok-old')
+        self.app.cache = mock
+
+        self.app.update()
+
+        self.app.icon.notify.assert_not_called()
+        mock.ensure_profile.assert_not_called()
+        # Baselines stay untouched so the refetch on the new token detects the switch.
+        self.assertEqual(self.app._prev_account_uuid, 'uuid-old')
+        self.assertEqual(self.app._prev_utilization, {'five_hour': 97.0})
+
+    @patch('usage_monitor_for_claude.app.read_access_token', return_value='tok-new')
+    @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
+    @patch('usage_monitor_for_claude.app.create_icon_image')
+    def test_switch_reported_once_refetched_on_new_token(self, _icon, _tooltip, _token):
+        """The refetch on the new token reports the switch together with its usage data."""
+        self.app._prev_account_uuid = 'uuid-old'
+
+        # Poll whose fetch still used the old token - deferred.
+        stale = self._make_cache_mock('uuid-new', 'new@example.com', {'five_hour': {'utilization': 90.0}})
+        stale.update.return_value = UpdateResult(data={'five_hour': {'utilization': 90.0}}, token='tok-old')
+        self.app.cache = stale
+        self.app.update()
+
+        # Forced refetch on the new token.
+        fresh_data = {'five_hour': {'utilization': 3.0}}
+        fresh = self._make_cache_mock('uuid-new', 'new@example.com', fresh_data)
+        fresh.update.return_value = UpdateResult(data=fresh_data, token='tok-new')
+        self.app.cache = fresh
+        self.app.update(force=True)
+
+        self.app.icon.notify.assert_called_once()
+        self.assertIn('new@example.com', self.app.icon.notify.call_args[0][0])
+        self.assertEqual(self.app._last_response, fresh_data)
+        self.assertEqual(self.app._prev_account_uuid, 'uuid-new')
+
+    @patch('usage_monitor_for_claude.app.read_access_token', return_value=None)
+    @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
+    @patch('usage_monitor_for_claude.app.create_icon_image')
+    def test_unreadable_credentials_defer_detection(self, _icon, _tooltip, _token):
+        """An unreadable credentials file defers the comparison instead of guessing.
+
+        The file is rewritten during an account switch, so a read landing in
+        that window returns no token - which account the data belongs to is
+        unknown until the next poll.
+        """
+        data = {'five_hour': {'utilization': 10.0}}
+        self.app._prev_account_uuid = 'uuid-old'
+        mock = self._make_cache_mock('uuid-new', 'new@example.com', data)
+        mock.update.return_value = UpdateResult(data=data, token='tok-old')
+        self.app.cache = mock
+
+        self.app.update()
+
+        self.app.icon.notify.assert_not_called()
+        self.assertEqual(self.app._prev_account_uuid, 'uuid-old')
+
+    @patch('usage_monitor_for_claude.app.read_access_token', return_value='tok-a')
+    @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
+    @patch('usage_monitor_for_claude.app.create_icon_image')
+    def test_unchanged_token_is_evaluated_normally(self, _icon, _tooltip, _token):
+        """A fetch on the token still in the credentials file is compared as usual."""
+        data = {'five_hour': {'utilization': 10.0}}
+        self.app._prev_account_uuid = 'uuid-old'
+        mock = self._make_cache_mock('uuid-new', 'new@example.com', data)
+        mock.update.return_value = UpdateResult(data=data, token='tok-a')
+        self.app.cache = mock
+
+        self.app.update()
+
+        self.app.icon.notify.assert_called_once()
+        self.assertEqual(self.app._prev_account_uuid, 'uuid-new')
 
 
 # ---------------------------------------------------------------------------

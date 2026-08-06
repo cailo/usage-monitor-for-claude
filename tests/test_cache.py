@@ -223,6 +223,31 @@ class TestSuccessState(unittest.TestCase):
         # refreshing sets version to 1, _record_success sets version to 2
         self.assertEqual(cache.version, 2)
 
+    @patch('usage_monitor_for_claude.cache.read_access_token', return_value='tok-a')
+    @patch('usage_monitor_for_claude.cache.fetch_usage', return_value=_SUCCESS_DATA)
+    def test_success_reports_the_token_used(self, _mock_fetch, _mock_token):
+        """The result carries the token the request was sent with, so the caller
+        can tell whether the data still matches the current credentials."""
+        cache = _make_cache()
+
+        result = cache.update()
+
+        self.assertEqual(result.token, 'tok-a')
+
+    @patch('usage_monitor_for_claude.cache.refresh_token')
+    @patch('usage_monitor_for_claude.cache.read_access_token', side_effect=['tok-a', 'tok-b'])
+    @patch('usage_monitor_for_claude.cache.fetch_usage')
+    def test_retry_after_auth_error_reports_the_retry_token(self, mock_fetch, _mock_token, mock_refresh):
+        """After a 401 recovered on a changed token, the result carries the retry's token."""
+        mock_fetch.side_effect = [_AUTH_ERROR_DATA, _SUCCESS_DATA]
+        cache = _make_cache()
+
+        result = cache.update()
+
+        mock_refresh.assert_not_called()
+        self.assertEqual(result.data, _SUCCESS_DATA)
+        self.assertEqual(result.token, 'tok-b')
+
     @patch('usage_monitor_for_claude.cache.read_access_token', return_value='new-token')
     @patch('usage_monitor_for_claude.cache.fetch_usage', return_value=_SUCCESS_DATA)
     def test_success_clears_failed_token_guard(self, _mock_fetch, _mock_token):
@@ -913,6 +938,10 @@ class TestUpdateResult(unittest.TestCase):
     def test_default_token_refresh_is_none(self):
         result = UpdateResult(data={'key': 'value'})
         self.assertIsNone(result.token_refresh)
+
+    def test_default_token_is_none(self):
+        result = UpdateResult(data={'key': 'value'})
+        self.assertIsNone(result.token)
 
     def test_skipped_result(self):
         result = UpdateResult(data=None)

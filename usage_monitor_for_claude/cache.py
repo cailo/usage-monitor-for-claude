@@ -47,10 +47,16 @@ class UpdateResult:
         (lock held or cooldown active).
     token_refresh : RefreshResult or None
         Set when a token refresh was attempted after a 401 auth error.
+    token : str or None
+        Access token that was in effect when the successful request was
+        sent.  Lets the caller detect credentials that changed while the
+        request was in flight, meaning ``data`` still belongs to the
+        account that was active before an account switch.
     """
 
     data: dict[str, Any] | None
     token_refresh: RefreshResult | None = None
+    token: str | None = None
 
 
 class UsageCache:
@@ -65,6 +71,7 @@ class UsageCache:
         self._state_lock = threading.Lock()
         self._profile_lock = threading.Lock()
         self._usage: dict[str, Any] = {}
+        self._usage_token: str | None = None
         self._profile: dict[str, Any] | None = None
         self._profile_token: str | None = None
         self._last_success_time: float | None = None
@@ -256,7 +263,7 @@ class UsageCache:
                 token_refresh, retry_data = self._try_token_refresh(token_before)
                 if token_refresh is not None and self._last_error is None:
                     # Token refresh succeeded and retry was successful
-                    return UpdateResult(data=self._usage, token_refresh=token_refresh)
+                    return UpdateResult(data=self._usage, token_refresh=token_refresh, token=self._usage_token)
                 if token_refresh is None:
                     # Refresh failed or token unchanged - block this token
                     self._last_failed_token = token_before
@@ -276,8 +283,8 @@ class UsageCache:
         pct_5h = (data.get('five_hour') or {}).get('utilization')
         pct_7d = (data.get('seven_day') or {}).get('utilization')
         log.info('fetch_usage -> OK (5h: %s%%, 7d: %s%%)', pct_5h if pct_5h is not None else '?', pct_7d if pct_7d is not None else '?')
-        self._record_success(data)
-        return UpdateResult(data=data)
+        self._record_success(data, token_before)
+        return UpdateResult(data=data, token=token_before)
 
     def _apply_rate_limit_backoff(self, data: dict[str, Any]) -> None:
         """Arm the 429 backoff window from a rate-limited error response.
@@ -313,8 +320,16 @@ class UsageCache:
                 error += f'\n{server_msg}'
             self._last_error = error
 
-    def _record_success(self, data: dict[str, Any]) -> None:
-        """Apply common state updates after a successful API response."""
+    def _record_success(self, data: dict[str, Any], token: str | None) -> None:
+        """Apply common state updates after a successful API response.
+
+        Parameters
+        ----------
+        data : dict
+            Successful API response.
+        token : str or None
+            Access token that was in effect when the request was sent.
+        """
         # _usage is always reassigned (never mutated in place), so existing
         # CacheSnapshot references remain valid after this update.
         with self._state_lock:
@@ -324,6 +339,7 @@ class UsageCache:
             self._rate_limit_until = 0
             self._last_failed_token = None
             self._usage = data
+            self._usage_token = token
             self._refreshing = False
             self._version += 1
 
@@ -351,14 +367,16 @@ class UsageCache:
         """
         result = RefreshResult(success=True, updated=False, old_version='', new_version='', error='')
 
-        if read_access_token() in (token_before, None):
+        current_token = read_access_token()
+        if current_token in (token_before, None):
             # Token unchanged - refresh it via the CLI (claude update).
             result = refresh_token()
             if not result.success:
                 log.info('token refresh failed: %s', result.error)
                 return None, None
 
-            if read_access_token() == token_before:
+            current_token = read_access_token()
+            if current_token == token_before:
                 log.info('token refresh succeeded but token unchanged')
                 return None, None
 
@@ -369,7 +387,7 @@ class UsageCache:
         data = fetch_usage()
         if 'error' not in data:
             log.info('retry -> OK')
-            self._record_success(data)
+            self._record_success(data, current_token)
             return result, data
 
         log.warning('retry -> error: %s', data['error'])

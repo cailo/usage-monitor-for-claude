@@ -457,6 +457,16 @@ class UsageMonitorForClaude:
         if 'error' in result.data:
             return
 
+        # The credentials token changed after this usage data was fetched: the user switched
+        # accounts while the request was in flight, so the data still belongs to the previous
+        # account.  Comparing it against the new account's profile would announce the switch on
+        # top of the old account's numbers and consume the UUID baseline, leaving the stale data
+        # in place until the next regular poll.  Keep every baseline untouched instead - for a
+        # real switch the poll loop's token watcher forces an immediate refetch that reports it
+        # with the new data; a same-account token rotation just resumes on the next poll.
+        if result.token is not None and result.token != read_access_token():
+            return
+
         # Detect account switch: re-fetch profile if the access token changed, then compare UUIDs.
         # When the user runs 'claude auth login', the token changes and the next profile fetch
         # returns a different account UUID, preventing a false quota-reset notification.
@@ -924,6 +934,11 @@ class UsageMonitorForClaude:
         self.cache.ensure_profile()
         force_next = False
         while self.running:
+            # Read before the update, not after: an account switch that lands while the
+            # request is in flight would otherwise already be part of the token read
+            # afterwards and never register as a change - leaving the previous account's
+            # usage on screen until the next regular poll.
+            token_seen = read_access_token()
             self.update(force=force_next)
             force_next = False
             interval = self._calculate_poll_interval()
@@ -931,7 +946,6 @@ class UsageMonitorForClaude:
             target = time.time() + interval
             self._next_poll_time = target
             last_success_seen = self.cache.last_success_time
-            token_seen = read_access_token()
             while self.running and time.time() < target:
                 time.sleep(1)
 
