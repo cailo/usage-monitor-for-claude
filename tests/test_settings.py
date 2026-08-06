@@ -444,6 +444,31 @@ class TestSettingsValidation(unittest.TestCase):
         result, _ = self._run_validate({'time_format': 24})
         self.assertNotIn('time_format', result)
 
+    # icon_style validation
+
+    def test_icon_style_number_bars_valid(self):
+        """icon_style 'number+bars' passes through unchanged."""
+        result, mock = self._run_validate({'icon_style': 'number+bars'})
+        self.assertEqual(result['icon_style'], 'number+bars')
+        mock.windll.user32.MessageBoxW.assert_not_called()
+
+    def test_icon_style_numbers_valid(self):
+        """icon_style 'numbers' passes through unchanged."""
+        result, mock = self._run_validate({'icon_style': 'numbers'})
+        self.assertEqual(result['icon_style'], 'numbers')
+        mock.windll.user32.MessageBoxW.assert_not_called()
+
+    def test_icon_style_unknown_value_dropped(self):
+        """Unknown icon_style value is dropped with a MessageBox."""
+        result, mock = self._run_validate({'icon_style': 'bars'})
+        self.assertNotIn('icon_style', result)
+        mock.windll.user32.MessageBoxW.assert_called_once()
+
+    def test_icon_style_non_string_dropped(self):
+        """Non-string icon_style value is dropped."""
+        result, _ = self._run_validate({'icon_style': 2})
+        self.assertNotIn('icon_style', result)
+
     # Non-negative numeric validation
 
     def test_idle_pause_zero_valid(self):
@@ -911,6 +936,24 @@ class TestIconFieldsDefault(unittest.TestCase):
             (Path(app_tmp) / settings_mod.SETTINGS_FILENAME).write_text(json.dumps(settings), encoding='utf-8')
             loaded = _load(Path(app_tmp), Path(home_tmp))
         self.assertEqual(loaded['icon_fields'], ['seven_day', 'five_hour'])
+
+
+class TestIconStyleDefault(unittest.TestCase):
+    """Tests for ICON_STYLE default value."""
+
+    def test_default_without_settings(self):
+        """icon_style is absent when no settings file exists - the 'number+bars' default applies."""
+        with TemporaryDirectory() as app_tmp, TemporaryDirectory() as home_tmp:
+            loaded = _load(Path(app_tmp), Path(home_tmp))
+        self.assertNotIn('icon_style', loaded)
+
+    def test_override_from_settings(self):
+        """icon_style is loaded from settings file."""
+        with TemporaryDirectory() as app_tmp, TemporaryDirectory() as home_tmp:
+            settings = {'icon_style': 'numbers'}
+            (Path(app_tmp) / settings_mod.SETTINGS_FILENAME).write_text(json.dumps(settings), encoding='utf-8')
+            loaded = _load(Path(app_tmp), Path(home_tmp))
+        self.assertEqual(loaded['icon_style'], 'numbers')
 
 
 class TestTooltipFieldsValidation(unittest.TestCase):

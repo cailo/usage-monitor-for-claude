@@ -147,11 +147,12 @@ Entries can be either a **section key** or a **usage field name**:
 
 ## Tray icon bars
 
-The tray icon displays two small progress bars. By default, these show the session (5h) and weekly (7d) quotas. Use `icon_fields` to choose which two API fields are displayed.
+The tray icon displays two small progress bars. By default, these show the session (5h) and weekly (7d) quotas. Use `icon_fields` to choose which two API fields are displayed, and `icon_style` to switch the icon layout.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `icon_fields` | `["five_hour", "seven_day"]` | Which two usage fields to show as icon bars. The first entry is the top bar (also determines the icon text), the second is the bottom bar |
+| `icon_style` | `"number+bars"` | Icon layout: `"number+bars"` shows the first field's percentage above two progress bars; `"numbers"` shows both fields as two stacked percentages without bars |
 
 Must be an array of exactly 2 non-empty strings. Unknown field names are accepted - if a field is `null` or missing from the API response, the bar shows 0%.
 
@@ -167,6 +168,16 @@ Each entry can optionally include a display mode suffix using colon syntax: `"fi
 | `overage` | Shows how far usage has entered the over-budget zone: empty when usage is at or below the time marker (on pace or ahead), half-filled when usage is halfway between the time marker and 100%, full when usage reaches 100% |
 
 In `utilization` mode, each bar also shows a thin vertical marker at the elapsed-time position of the quota period - the same information as the time marker in the detail popup. When usage is ahead of the elapsed time (or fully exhausted), the bar fill switches to the warning color (`fg_warn` in [Tray icon colors](#tray-icon-colors)), matching the popup's red warning fill.
+
+**The `"numbers"` style** replaces the bars with a second percentage: the first `icon_fields` entry becomes the top row, the second the bottom row. Each row follows the same rules as the classic icon text - an exhausted quota shows `✕` (or `$` when paid extra usage is still available); when both quotas are exhausted at once, the icon collapses to a single full-size `✕`/`$` like the classic style. The time marker, the warning color, and the `:overage` mode suffix have no effect in this style, and while both quotas are at 0% the icon shows the usual idle "C". Each stacked number is rendered at the same size as the classic single percentage.
+
+**Example** - show session and weekly usage as two stacked percentages:
+
+```json
+{
+    "icon_style": "numbers"
+}
+```
 
 **Example** - show session in overage mode and weekly in default mode:
 

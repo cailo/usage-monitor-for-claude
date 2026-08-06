@@ -14,6 +14,14 @@ from PIL import Image, ImageDraw
 import usage_monitor_for_claude.tray_icon as tray_icon_mod
 
 
+def setUpModule():
+    # Pin the default icon style so a local usage-monitor-settings.json with
+    # 'icon_style' cannot flip the classic-style rendering tests.
+    patcher = patch.object(tray_icon_mod, 'ICON_STYLE', 'number+bars')
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
+
 class TestWatchThemeChange(unittest.TestCase):
     """Tests for watch_theme_change() - the registry-based theme watcher."""
 
@@ -635,6 +643,198 @@ class TestCreateIconImageTimeMarker(unittest.TestCase):
         for mid_y in self._bar_mid_rows():
             self.assertEqual(pixels[32, mid_y], fg, f'Expected marker pixel at x=32, y={mid_y}')
             self.assertEqual(pixels[5, mid_y], fg_warn, f'Expected warn fill pixel at x=5, y={mid_y}')
+
+
+class TestCreateIconImageNumbersStyle(unittest.TestCase):
+    """Tests for create_icon_image() with the 'numbers' icon style.
+
+    The style replaces the big-number-plus-bars layout with two stacked
+    percentage rows: row 1 shows pct_top, row 2 shows pct_bottom.  Each row
+    applies the classic glyph rules per row (✕/$ when exhausted, clamp to
+    99) and is always drawn in fg, like the classic glyph.
+    """
+
+    def setUp(self):
+        tray_icon_mod.load_font.cache_clear()
+        patcher = patch.object(tray_icon_mod, 'ICON_STYLE', 'numbers')
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        tray_icon_mod.load_font.cache_clear()
+
+    @staticmethod
+    def _row_ranges():
+        """Return the y ranges of the top and bottom number rows."""
+        row_h = tray_icon_mod.NUMBER_ROW_HEIGHT
+        return (range(0, row_h), range(row_h, 2 * row_h))
+
+    @staticmethod
+    def _region_has_color(img, y_range, color):
+        """Return True if any pixel in the given rows matches *color* exactly."""
+        pixels = img.load()
+        for y in y_range:
+            for x in range(tray_icon_mod.ICON_SIZE):
+                if pixels[x, y] == color:
+                    return True
+        return False
+
+    def test_returns_64x64_rgba_image(self):
+        """Numbers style still produces a 64x64 RGBA image."""
+        img = tray_icon_mod.create_icon_image(47, 82)
+
+        self.assertEqual(img.size, (64, 64))
+        self.assertEqual(img.mode, 'RGBA')
+
+    def test_no_bar_track_drawn(self):
+        """The bar zones stay transparent - no fg_half track is drawn."""
+        img = tray_icon_mod.create_icon_image(50, 50)
+
+        pixels = img.load()
+        for y in (48, 59):
+            self.assertEqual(pixels[0, y][3], 0, f'Expected transparent pixel at x=0, y={y}')
+
+    @patch.object(tray_icon_mod, 'load_font')
+    def test_rows_use_font_40(self, mock_font):
+        """Both rows request the size 40 digit font - the same size as the classic single number."""
+        mock_font.return_value = _real_font()
+
+        tray_icon_mod.create_icon_image(30, 20)
+
+        mock_font.assert_any_call(40)
+
+    @patch.object(tray_icon_mod, 'load_font')
+    def test_both_rows_zero_shows_single_c(self, mock_font):
+        """Both fields at 0% collapse to the single idle 'C' (size 42)."""
+        mock_font.return_value = _real_font()
+
+        tray_icon_mod.create_icon_image(0, 0)
+
+        mock_font.assert_any_call(42)
+        self.assertNotIn(call(40), mock_font.call_args_list)
+
+    @patch.object(tray_icon_mod, 'load_font')
+    def test_zero_row_beside_nonzero_shows_zero_digit(self, mock_font):
+        """A single zero row renders '0' - only both-zero collapses to 'C'."""
+        mock_font.return_value = _real_font()
+
+        tray_icon_mod.create_icon_image(0, 50)
+
+        mock_font.assert_any_call(40)
+        self.assertNotIn(call(42), mock_font.call_args_list)
+
+    @patch.object(tray_icon_mod, 'load_font')
+    def test_fractional_usage_shows_rows_not_idle_c(self, mock_font):
+        """Usage in (0, 0.5) renders two '0' rows - only exactly zero collapses to 'C'."""
+        mock_font.return_value = _real_font()
+
+        tray_icon_mod.create_icon_image(0.3, 0.3)
+
+        mock_font.assert_any_call(40)
+        self.assertNotIn(call(42), mock_font.call_args_list)
+
+    @patch.object(tray_icon_mod, 'load_font')
+    def test_exhausted_row_uses_symbol_font(self, mock_font):
+        """An exhausted row without extra credits requests the size 34 symbol font for '✕'."""
+        mock_font.return_value = _real_font()
+
+        tray_icon_mod.create_icon_image(100, 20)
+
+        mock_font.assert_any_call(34, symbol=True)
+
+    @patch.object(tray_icon_mod, 'load_font')
+    def test_exhausted_row_with_extra_usage_shows_dollar(self, mock_font):
+        """With paid extra usage available the exhausted row shows '$' instead of '✕'."""
+        mock_font.return_value = _real_font()
+
+        tray_icon_mod.create_icon_image(100, 20, extra_usage_available=True)
+
+        mock_font.assert_any_call(32)
+        self.assertNotIn(call(34, symbol=True), mock_font.call_args_list)
+
+    @patch.object(tray_icon_mod, 'load_font')
+    def test_both_rows_exhausted_shows_single_large_cross(self, mock_font):
+        """Both quotas exhausted collapse to one full-size '✕' instead of two half-size ones."""
+        mock_font.return_value = _real_font()
+
+        tray_icon_mod.create_icon_image(100, 100)
+
+        mock_font.assert_any_call(36, symbol=True)
+        self.assertNotIn(call(34, symbol=True), mock_font.call_args_list)
+
+    @patch.object(tray_icon_mod, 'load_font')
+    def test_both_rows_exhausted_with_extra_usage_shows_single_large_dollar(self, mock_font):
+        """Both quotas exhausted with extra usage collapse to one full-size '$'."""
+        mock_font.return_value = _real_font()
+
+        tray_icon_mod.create_icon_image(100, 100, extra_usage_available=True)
+
+        mock_font.assert_any_call(42)
+        self.assertNotIn(call(32), mock_font.call_args_list)
+
+    def test_top_row_unaffected_by_bottom_exhaustion(self):
+        """Exhaustion applies per row - the top row keeps its number when only the bottom is exhausted."""
+        img_exhausted = tray_icon_mod.create_icon_image(20, 100)
+        img_normal = tray_icon_mod.create_icon_image(20, 5)
+
+        row_h = tray_icon_mod.NUMBER_ROW_HEIGHT
+        top_exhausted = img_exhausted.crop((0, 0, 64, row_h)).tobytes()
+        top_normal = img_normal.crop((0, 0, 64, row_h)).tobytes()
+        self.assertEqual(top_exhausted, top_normal)
+
+    def test_rows_stay_fg_when_ahead_of_time(self):
+        """Rows are always drawn in fg - being ahead of the elapsed time does not recolor them."""
+        # top: 70% used at 40% elapsed - would warn on a bar, but not here
+        img = tray_icon_mod.create_icon_image(70, 20, time_pct_top=40, time_pct_bottom=40)
+
+        fg = tray_icon_mod.ICON_LIGHT['fg']
+        fg_warn = tray_icon_mod.ICON_LIGHT['fg_warn']
+        top_rows, bottom_rows = self._row_ranges()
+        self.assertTrue(self._region_has_color(img, top_rows, fg), 'Expected fg digits in the top row')
+        self.assertTrue(self._region_has_color(img, bottom_rows, fg), 'Expected fg digits in the bottom row')
+        self.assertFalse(self._region_has_color(img, range(0, 64), fg_warn), 'Unexpected fg_warn pixels in numbers style')
+
+    def test_exhausted_glyph_drawn_in_fg(self):
+        """The exhausted '✕' is drawn in fg, matching the classic glyph."""
+        img = tray_icon_mod.create_icon_image(100, 20)
+
+        fg = tray_icon_mod.ICON_LIGHT['fg']
+        fg_warn = tray_icon_mod.ICON_LIGHT['fg_warn']
+        top_rows, _bottom_rows = self._row_ranges()
+        self.assertTrue(self._region_has_color(img, top_rows, fg), 'Expected fg glyph in the exhausted top row')
+        self.assertFalse(self._region_has_color(img, range(0, 64), fg_warn), 'Unexpected fg_warn pixels in numbers style')
+
+    def test_time_pct_has_no_effect(self):
+        """Elapsed-time values do not change the numbers-style rendering."""
+        img_with_time = tray_icon_mod.create_icon_image(70, 20, time_pct_top=40, time_pct_bottom=40)
+        img_without_time = tray_icon_mod.create_icon_image(70, 20)
+
+        self.assertEqual(img_with_time.tobytes(), img_without_time.tobytes())
+
+    def test_99_5_renders_like_99_per_row(self):
+        """Utilization in [99.5, 100) clamps to '99' in both rows."""
+        reference_top = tray_icon_mod.create_icon_image(99.0, 10.0)
+        reference_bottom = tray_icon_mod.create_icon_image(10.0, 99.0)
+        for pct in (99.5, 99.9, 99.99):
+            with self.subTest(pct=pct):
+                self.assertEqual(tray_icon_mod.create_icon_image(pct, 10.0).tobytes(), reference_top.tobytes())
+                self.assertEqual(tray_icon_mod.create_icon_image(10.0, pct).tobytes(), reference_bottom.tobytes())
+
+    def test_overage_mode_suffix_ignored(self):
+        """The overage bar mode has no effect in numbers style."""
+        img_overage = tray_icon_mod.create_icon_image(70, 20, mode_top='overage', time_pct_top=40, time_pct_bottom=40)
+        img_plain = tray_icon_mod.create_icon_image(70, 20, time_pct_top=40, time_pct_bottom=40)
+
+        self.assertEqual(img_overage.tobytes(), img_plain.tobytes())
+
+    def test_light_taskbar_uses_dark_palette(self):
+        """Light taskbar draws the digits with the ICON_DARK palette."""
+        img = tray_icon_mod.create_icon_image(50, 50, light_taskbar=True)
+
+        fg = tray_icon_mod.ICON_DARK['fg']
+        top_rows, bottom_rows = self._row_ranges()
+        self.assertTrue(self._region_has_color(img, top_rows, fg), 'Expected ICON_DARK fg digits in the top row')
+        self.assertTrue(self._region_has_color(img, bottom_rows, fg), 'Expected ICON_DARK fg digits in the bottom row')
 
 
 class TestCreateStatusImage(unittest.TestCase):

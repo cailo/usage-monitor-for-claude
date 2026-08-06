@@ -14,7 +14,7 @@ from typing import Callable
 
 from PIL import Image, ImageDraw, ImageFont
 
-from .settings import ICON_DARK, ICON_LIGHT
+from .settings import ICON_DARK, ICON_LIGHT, ICON_STYLE
 
 __all__ = ['load_font', 'taskbar_uses_light_theme', 'watch_theme_change', 'create_icon_image', 'create_status_image']
 
@@ -30,6 +30,9 @@ ICON_SIZE = 64
 BAR_HEIGHT = 9
 BAR_GAP = 3
 MARKER_WIDTH = 4
+
+# Row height for the 'numbers' icon style - two rows split the canvas evenly.
+NUMBER_ROW_HEIGHT = 32
 
 
 @functools.lru_cache(maxsize=None)
@@ -90,6 +93,10 @@ def create_icon_image(
 ) -> Image.Image:
     """Create tray icon: 'C' letter + two usage bars.
 
+    With ``ICON_STYLE`` set to ``'numbers'`` the icon instead shows the two
+    utilization percentages as stacked rows without bars; the mode and
+    elapsed-time parameters have no effect in that style.
+
     Parameters
     ----------
     pct_top : float
@@ -121,6 +128,22 @@ def create_icon_image(
     img = Image.new('RGBA', (S, S), TRANSPARENT)
     draw = ImageDraw.Draw(img)
 
+    if ICON_STYLE == 'numbers':
+        # Two states collapse both rows into one full-size glyph: idle shows
+        # the single 'C', and both quotas exhausted shows one large '✕'/'$' -
+        # extra_usage_available applies account-wide, so the two rows would
+        # only repeat the same symbol twice at half size.
+        if pct_top >= 100 and pct_bottom >= 100 and not extra_usage_available:
+            _draw_centered_text(draw, '\u2715', load_font(36, symbol=True), 2, fg)
+        elif pct_top >= 100 and pct_bottom >= 100:
+            _draw_centered_text(draw, '$', load_font(42), 2, fg)
+        elif pct_top <= 0 and pct_bottom <= 0:
+            _draw_centered_text(draw, 'C', load_font(42), 0, fg)
+        else:
+            _draw_number_row(draw, 0, pct_top, extra_usage_available, fg)
+            _draw_number_row(draw, NUMBER_ROW_HEIGHT, pct_bottom, extra_usage_available, fg)
+        return img
+
     # Top glyph: "✕" when any quota exhausted and no extra credits left,
     # "$" when exhausted but paid extra-usage still available,
     # "C" while usage is still zero, otherwise the percentage.
@@ -151,6 +174,40 @@ def create_icon_image(
     _draw_usage_bar(draw, bar2_y, pct_bottom, mode_bottom, time_pct_bottom, fg, fg_half, fg_warn)
 
     return img
+
+
+def _draw_centered_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont | ImageFont.ImageFont, stroke_width: int, fg: tuple,
+        box_top: int = 0, box_height: int = ICON_SIZE) -> None:
+    """Draw *text* horizontally centered, vertically centered within the given box."""
+    bbox = draw.textbbox((0, 0), text, font=font, stroke_width=stroke_width)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    x = (ICON_SIZE - tw) / 2 - bbox[0]
+    y = box_top + (box_height - th) / 2 - bbox[1]
+    draw.text((x, y), text, fill=fg, font=font, stroke_width=stroke_width, stroke_fill=fg)
+
+
+def _draw_number_row(draw: ImageDraw.ImageDraw, row_top: int, pct: float, extra_usage_available: bool, fg: tuple) -> None:
+    """Draw one row of the ``'numbers'`` icon style at vertical offset *row_top*.
+
+    The row shows the percentage clamped to 99, or ``✕``/``$`` when the
+    quota is exhausted (following the same extra-usage rule as the classic
+    top glyph).  Everything is drawn in *fg*, matching the classic glyph.
+    """
+    stroke_width = 0
+    if pct >= 100 and not extra_usage_available:
+        text, font = '\u2715', load_font(34, symbol=True)
+        stroke_width = 2
+    elif pct >= 100:
+        # 32 is the ceiling for '$': its ascender and descender already span
+        # 30 of the 32 row pixels, larger sizes would touch the next row.
+        text, font = '$', load_font(32)
+        stroke_width = 1
+    else:
+        # Clamp to 99: values in [99.5, 100) would round to a three-digit
+        # '100' that overflows the canvas and reads as exhausted.
+        text, font = f'{min(pct, 99):.0f}', load_font(40)
+
+    _draw_centered_text(draw, text, font, stroke_width, fg, row_top, NUMBER_ROW_HEIGHT)
 
 
 def _draw_usage_bar(draw: ImageDraw.ImageDraw, y: int, pct: float, mode: str, time_pct: float | None, fg: tuple, fg_half: tuple, fg_warn: tuple) -> None:
