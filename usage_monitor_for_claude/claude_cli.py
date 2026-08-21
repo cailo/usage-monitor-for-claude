@@ -183,10 +183,7 @@ def refresh_token() -> RefreshResult:
         return RefreshResult(success=False, updated=False, old_version='', new_version='', error='CLI not found')
 
     try:
-        proc = subprocess.run(
-            [str(CLAUDE_CLI_PATH), 'update'],
-            capture_output=True, text=True, timeout=60, creationflags=subprocess.CREATE_NO_WINDOW,
-        )
+        proc = _run_cli([str(CLAUDE_CLI_PATH), 'update'], timeout=60)
     except subprocess.TimeoutExpired:
         return RefreshResult(success=False, updated=False, old_version='', new_version='', error='Timeout')
     except OSError as e:
@@ -231,10 +228,7 @@ def cli_version(path: Path) -> str:
         if cached and cached[0] == mtime:
             return cached[1]
 
-        proc = subprocess.run(
-            [str(path), '--version'],
-            capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW,
-        )
+        proc = _run_cli([str(path), '--version'], timeout=10)
         version = _parse_version(proc.stdout)
         _version_cache[path] = (mtime, version)
         return version
@@ -254,16 +248,58 @@ def _command_version(command: list[str]) -> str:
         return cached
 
     try:
-        proc = subprocess.run(
-            [*command, '--version'],
-            capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW,
-        )
+        proc = _run_cli([*command, '--version'], timeout=10)
     except Exception:
         return ''
 
     version = _parse_version(proc.stdout)
     _command_version_cache[key] = version
     return version
+
+
+def _run_cli(command: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
+    """Run a Claude CLI command and capture its output as UTF-8 text.
+
+    The Claude CLI is a Node application and writes UTF-8 whatever the
+    Windows code page is, so the codec is pinned here instead of inherited
+    from the ambient locale.  Decoding UTF-8 with a locale codec that cannot
+    represent it - cp950 on a Traditional Chinese system, for example -
+    raises inside the reader thread ``subprocess`` uses to drain the pipe;
+    that thread then contributes nothing and the stream comes back as
+    ``None`` despite ``capture_output=True``.
+
+    Parameters
+    ----------
+    command : list[str]
+        Executable and arguments to run.
+    timeout : int
+        Seconds to wait for the command to finish.
+
+    Returns
+    -------
+    subprocess.CompletedProcess[str]
+        The finished process; ``stdout`` and ``stderr`` are always ``str``.
+
+    Raises
+    ------
+    subprocess.TimeoutExpired
+        The command did not finish within *timeout*.
+    OSError
+        The command could not be started, or a stream was lost.
+    """
+    proc = subprocess.run(
+        command,
+        capture_output=True, text=True, encoding='utf-8', errors='replace',
+        timeout=timeout, creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+
+    # A missing stream means the output was lost, not that it was empty.  An
+    # I/O failure is the honest report: each caller's existing error handling
+    # then discards the run instead of recording an empty result as fact.
+    if proc.stdout is None or proc.stderr is None:
+        raise OSError('CLI output could not be captured')
+
+    return proc
 
 
 def _parse_version(output: str) -> str:
