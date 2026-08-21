@@ -18,6 +18,7 @@ from typing import Any
 
 import pystray  # type: ignore[import-untyped]  # no type stubs available
 
+from .anthropic_status import AnthropicStatus, AnthropicStatusCache
 from .api import api_headers, read_access_token
 from .autostart import is_autostart_enabled, set_autostart, sync_autostart_path
 from .cache import UsageCache
@@ -28,7 +29,8 @@ from .instance_id import effective_config_dir, is_default_config_dir
 from .settings import (
     ALERT_EXTRA_USAGE_SPENT, ALERT_TIME_AWARE, ALERT_TIME_AWARE_BELOW, ICON_FIELDS, IDLE_PAUSE, NOTIFY_CLAUDE_UPDATE,
     ON_DOUBLE_CLICK_COMMAND, ON_RESET_COMMAND, ON_STARTUP_COMMAND, ON_THRESHOLD_COMMAND,
-    POLL_ERROR, POLL_FAST, POLL_FAST_EXTRA, POLL_INTERVAL, get_alert_thresholds,
+    POLL_ERROR, POLL_FAST, POLL_FAST_EXTRA, POLL_INTERVAL,
+    STATUS_ENABLED, STATUS_NOTIFICATIONS, STATUS_POLL_INTERVAL, get_alert_thresholds,
 )
 from .formatting import elapsed_pct, field_period, format_credits, format_tooltip, parse_field_name, popup_label
 from .i18n import T
@@ -133,6 +135,13 @@ class UsageMonitorForClaude:
         self._popup_open = False
         self._popup_closed_at = 0.0
         self._next_poll_time: float | None = None
+
+        # Anthropic server status state.  _prev_status_indicator tracks the
+        # last *definitive* indicator (never 'unknown'), so a transient feed
+        # failure between two readings cannot fake an outage or recovery.
+        self._status_cache = AnthropicStatusCache(STATUS_POLL_INTERVAL) if STATUS_ENABLED else None
+        self._anthropic_status: AnthropicStatus | None = None
+        self._prev_status_indicator: str | None = None
 
         # Theme state
         self._light_taskbar = taskbar_uses_light_theme()
@@ -415,7 +424,11 @@ class UsageMonitorForClaude:
                 time_pct_top=time_pct_top, time_pct_bottom=time_pct_bottom,
                 extra_usage_available=extra_usage_available,
             )
-        self.icon.title = self._tooltip_prefix + format_tooltip(data)
+        tooltip = self._tooltip_prefix + format_tooltip(data)
+        status = self._anthropic_status
+        if status is not None and status.indicator not in ('none', 'unknown'):
+            tooltip += '\n' + T['tooltip_anthropic_status'].format(description=status.description)
+        self.icon.title = tooltip
 
     def _on_theme_changed(self) -> None:
         """Re-render the tray icon when the Windows theme changes."""
@@ -548,6 +561,44 @@ class UsageMonitorForClaude:
             self._run_startup_command(result.data)
 
         self._first_update_done = True
+
+    def _refresh_anthropic_status(self) -> None:
+        """Refresh the Anthropic status indicator and react to state changes.
+
+        Runs from the poll loop on its own cadence: the cache refetches at
+        most every ``status_poll_interval`` seconds and serves the cached
+        status in between, so calling this every tick is cheap.  An
+        ``unknown`` reading (feed unreachable) is shown in the popup but is
+        never treated as a state change - a flaky connection cannot fire
+        outage or recovery notifications.
+        """
+        if self._status_cache is None:
+            return
+
+        previous_shown = self._anthropic_status
+        current = self._status_cache.current()
+        self._anthropic_status = current
+
+        # A status change between data updates must reach the tooltip too -
+        # update() may not have re-rendered the tray this cycle.
+        if self._last_response and current != previous_shown:
+            self._render_tray()
+
+        if current.indicator == 'unknown':
+            return
+
+        previous_indicator = self._prev_status_indicator
+        self._prev_status_indicator = current.indicator
+        if previous_indicator is None or previous_indicator == current.indicator or not STATUS_NOTIFICATIONS:
+            return
+
+        if previous_indicator == 'none':
+            message = T['notify_anthropic_status_degraded'].format(description=current.description)
+            if current.incident_name:
+                message += f'\n{current.incident_name}'
+            self._notify_or_defer('anthropic_status', message, T['notify_anthropic_status_title'])
+        elif current.indicator == 'none':
+            self._notify_or_defer('anthropic_status', T['notify_anthropic_status_operational'], T['notify_anthropic_status_title'])
 
     # Notifications
 
@@ -939,6 +990,7 @@ class UsageMonitorForClaude:
             # afterwards and never register as a change - leaving the previous account's
             # usage on screen until the next regular poll.
             token_seen = read_access_token()
+            self._refresh_anthropic_status()
             self.update(force=force_next)
             force_next = False
             interval = self._calculate_poll_interval()
@@ -948,6 +1000,11 @@ class UsageMonitorForClaude:
             last_success_seen = self.cache.last_success_time
             while self.running and time.time() < target:
                 time.sleep(1)
+
+                # The status has its own (longer) poll interval, enforced by
+                # its cache - keep it fresh even when the usage cadence waits
+                # longer than that between polls.
+                self._refresh_anthropic_status()
 
                 # React to a credentials token change between polls. A switch to
                 # a different account forces an immediate refresh (bypassing the

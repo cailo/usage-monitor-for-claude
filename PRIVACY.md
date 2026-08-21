@@ -8,8 +8,13 @@ This application does **not** collect, store, or transmit any personal data.
 
 ## Network Communication
 
-The application communicates exclusively with `api.anthropic.com` to retrieve your current API usage
-data. No other network connections are made.
+The application communicates with two hosts:
+
+- `api.anthropic.com` - retrieves your current API usage data, authenticated with your OAuth token
+- `status.anthropic.com` - retrieves the public Anthropic service status; this endpoint is read-only,
+  involves no credentials, and is not contacted at all when the `status_enabled` setting is `false`
+
+No other network connections are made.
 
 ## Credentials
 
@@ -30,6 +35,14 @@ Two values are written to the Windows registry, both under `HKEY_CURRENT_USER`:
   shown in the header of the application's notifications. Re-registered on every start.
 - `Software\Microsoft\Windows\CurrentVersion\Run` - the autostart entry. Written only when you
   enable autostart from the tray menu, removed when you disable it again.
+
+On Linux there is no registry, and the notification identity comes from the `.desktop` file
+installed by the package. The single-instance lock is the D-Bus name itself, so not even a lock
+file is created. Exactly one file is ever written, and only on your explicit command:
+
+- `~/.config/autostart/usage-monitor-for-claude.desktop` - the autostart entry, the direct
+  counterpart of the Windows `Run` registry value. Written when you enable "Start with session"
+  from the widget menu, removed when you disable it again.
 
 ## Claude Code Installation
 

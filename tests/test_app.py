@@ -7,10 +7,18 @@ tray rendering, polling interval, and reset notifications.
 """
 from __future__ import annotations
 
+import os
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+# The modules under test bind to Win32 APIs (pystray, winreg, ctypes.windll)
+# at import time.  The Linux port replaces this layer entirely, so there is
+# nothing here to exercise off Windows.
+if os.name != 'nt':
+    raise unittest.SkipTest('Windows-only application layer')
+
+from usage_monitor_for_claude.anthropic_status import AnthropicStatus
 from usage_monitor_for_claude.app import (
     POLL_FAST, RESET_BUFFER, WM_LBUTTONDBLCLK, WM_LBUTTONUP, UsageMonitorForClaude, _align_to_reset,
 )
@@ -28,9 +36,12 @@ def _make_app(thresholds: list[float] | None = None) -> UsageMonitorForClaude:
     """
     if thresholds is None:
         thresholds = [80, 95]
+    # STATUS_ENABLED is forced off so no test ever hits the real status feed
+    # through poll_loop; status tests install their own mocked cache.
     with patch('usage_monitor_for_claude.app.pystray'), \
          patch('usage_monitor_for_claude.app.create_icon_image'), \
-         patch('usage_monitor_for_claude.app.taskbar_uses_light_theme', return_value=False):
+         patch('usage_monitor_for_claude.app.taskbar_uses_light_theme', return_value=False), \
+         patch('usage_monitor_for_claude.app.STATUS_ENABLED', False):
         app = UsageMonitorForClaude()
     app.icon = MagicMock()
     # Patches active for the app's lifetime, stopped by _cleanup.  The presence
@@ -3621,6 +3632,152 @@ class TestInstallDoubleClickHandler(unittest.TestCase):
         self.assertEqual(fake_icon._message_handlers[0x40B], self.app._on_tray_message)
         self.assertIs(fake_icon._message_handlers[0x0002], other_handler)
         self.assertIs(self.app._pystray_on_notify, original_notify)
+
+
+# ---------------------------------------------------------------------------
+# _refresh_anthropic_status
+# ---------------------------------------------------------------------------
+
+class TestRefreshAnthropicStatus(unittest.TestCase):
+    """Tests for _refresh_anthropic_status() state tracking, notifications, and tooltip."""
+
+    def setUp(self):
+        self.app = _make_app()
+        self.app._status_cache = MagicMock()
+
+    def tearDown(self):
+        _cleanup(self.app)
+
+    def _serve(self, indicator: str, description: str = '', incident_name: str | None = None) -> None:
+        """Make the mocked status cache serve the given status."""
+        self.app._status_cache.current.return_value = AnthropicStatus(indicator=indicator, description=description, incident_name=incident_name)
+
+    def test_disabled_indicator_is_noop(self):
+        """With status_enabled false there is no cache and no status is stored."""
+        self.app._status_cache = None
+
+        self.app._refresh_anthropic_status()
+
+        self.assertIsNone(self.app._anthropic_status)
+
+    def test_stores_status_for_popup(self):
+        self._serve('none', 'All Systems Operational')
+
+        self.app._refresh_anthropic_status()
+
+        self.assertEqual(self.app._anthropic_status, AnthropicStatus(indicator='none', description='All Systems Operational'))
+
+    def test_first_reading_never_notifies(self):
+        """An incident already ongoing at startup is state, not an event."""
+        self._serve('major', 'Partial System Outage')
+
+        self.app._refresh_anthropic_status()
+
+        self.app.icon.notify.assert_not_called()
+
+    def test_notifies_when_incident_starts(self):
+        self._serve('none', 'All Systems Operational')
+        self.app._refresh_anthropic_status()
+
+        self._serve('minor', 'Minor Service Outage', incident_name='Elevated errors on Claude API')
+        self.app._refresh_anthropic_status()
+
+        self.app.icon.notify.assert_called_once()
+        message = self.app.icon.notify.call_args[0][0]
+        self.assertIn('Minor Service Outage', message)
+        self.assertIn('Elevated errors on Claude API', message)
+
+    def test_notifies_when_incident_resolves(self):
+        self._serve('critical', 'Major System Outage')
+        self.app._refresh_anthropic_status()
+
+        self._serve('none', 'All Systems Operational')
+        self.app._refresh_anthropic_status()
+
+        self.app.icon.notify.assert_called_once()
+
+    def test_severity_change_between_outage_levels_stays_silent(self):
+        """Only leaving and returning to 'none' notifies, not minor -> major."""
+        self._serve('minor', 'Minor Service Outage')
+        self.app._refresh_anthropic_status()
+
+        self._serve('major', 'Partial System Outage')
+        self.app._refresh_anthropic_status()
+
+        self.app.icon.notify.assert_not_called()
+
+    def test_unknown_reading_is_not_a_state_change(self):
+        """A feed hiccup between two operational readings fires nothing."""
+        for indicator in ('none', 'unknown', 'none'):
+            self._serve(indicator, 'All Systems Operational' if indicator == 'none' else '')
+            self.app._refresh_anthropic_status()
+
+        self.app.icon.notify.assert_not_called()
+
+    def test_incident_after_unknown_gap_still_notifies(self):
+        """none -> unknown -> minor reports the incident start despite the gap."""
+        self._serve('none', 'All Systems Operational')
+        self.app._refresh_anthropic_status()
+        self._serve('unknown')
+        self.app._refresh_anthropic_status()
+
+        self._serve('minor', 'Minor Service Outage')
+        self.app._refresh_anthropic_status()
+
+        self.app.icon.notify.assert_called_once()
+
+    def test_unknown_reading_still_reaches_popup(self):
+        self._serve('none', 'All Systems Operational')
+        self.app._refresh_anthropic_status()
+
+        self._serve('unknown')
+        self.app._refresh_anthropic_status()
+
+        self.assertEqual(self.app._anthropic_status.indicator, 'unknown')
+
+    @patch('usage_monitor_for_claude.app.STATUS_NOTIFICATIONS', False)
+    def test_notifications_can_be_disabled(self):
+        self._serve('none', 'All Systems Operational')
+        self.app._refresh_anthropic_status()
+
+        self._serve('critical', 'Major System Outage')
+        self.app._refresh_anthropic_status()
+
+        self.app.icon.notify.assert_not_called()
+
+    @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
+    @patch('usage_monitor_for_claude.app.create_icon_image')
+    def test_status_change_rerenders_tooltip(self, _icon, _tooltip):
+        """A status change between data updates refreshes the tray tooltip."""
+        self.app._last_response = {'five_hour': {'utilization': 10.0}}
+        self._serve('none', 'All Systems Operational')
+        self.app._refresh_anthropic_status()
+
+        self._serve('major', 'Partial System Outage')
+        self.app._refresh_anthropic_status()
+
+        self.assertIn('Partial System Outage', self.app.icon.title)
+
+    @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
+    @patch('usage_monitor_for_claude.app.create_icon_image')
+    def test_tooltip_has_no_status_line_while_operational(self, _icon, _tooltip):
+        self.app._last_response = {'five_hour': {'utilization': 10.0}}
+        self.app._anthropic_status = AnthropicStatus(indicator='none', description='All Systems Operational')
+
+        self.app._render_tray()
+
+        self.assertTrue(self.app.icon.title.endswith('tooltip'))
+
+    @patch('usage_monitor_for_claude.app.format_tooltip', return_value='tooltip')
+    @patch('usage_monitor_for_claude.app.create_icon_image')
+    def test_tooltip_has_no_status_line_while_unknown(self, _icon, _tooltip):
+        """An unreachable status feed adds no noise to the tooltip."""
+        self.app._last_response = {'five_hour': {'utilization': 10.0}}
+        self.app._anthropic_status = AnthropicStatus(indicator='unknown', description='')
+
+        self.app._render_tray()
+
+        self.assertTrue(self.app.icon.title.endswith('tooltip'))
 
 
 if __name__ == '__main__':

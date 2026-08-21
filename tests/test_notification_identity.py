@@ -6,8 +6,15 @@ Unit tests for the toast-notification identity registration.
 """
 from __future__ import annotations
 
+import os
 import unittest
 from unittest.mock import MagicMock, patch
+
+# The modules under test bind to Win32 APIs (pystray, winreg, ctypes.windll)
+# at import time.  The Linux port replaces this layer entirely, so there is
+# nothing here to exercise off Windows.
+if os.name != 'nt':
+    raise unittest.SkipTest('Windows-only application layer')
 
 import usage_monitor_for_claude.notification_identity as ni
 

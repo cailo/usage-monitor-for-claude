@@ -1,0 +1,5 @@
+#!/bin/sh
+# Client the Plasma applet runs to read the daemon's snapshot.
+PYTHONPATH=/usr/share/usage-monitor-for-claude${PYTHONPATH:+:$PYTHONPATH}
+export PYTHONPATH
+exec /usr/bin/python -m usage_monitor_linux.cli "$@"

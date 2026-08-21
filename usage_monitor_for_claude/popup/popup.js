@@ -33,6 +33,7 @@ function init(config) {
     const changelogLink = document.getElementById('changelogLink');
     changelogLink.textContent = translations.changelog;
     changelogLink.addEventListener('click', () => pywebview.api.open_url());
+    document.getElementById('anthropicStatusRow').addEventListener('click', () => pywebview.api.open_status_url());
     document.getElementById('closeBtn').addEventListener('click', () => pywebview.api.close());
     setupPinButton();
     setupPinnedDrag();
@@ -55,6 +56,10 @@ function init(config) {
         extraFill: document.getElementById('extraFill'),
         installSection: document.getElementById('installSection'),
         installRows: document.getElementById('installRows'),
+        anthropicSection: document.getElementById('anthropicStatusSection'),
+        anthropicDot: document.getElementById('anthropicStatusDot'),
+        anthropicText: document.getElementById('anthropicStatusText'),
+        anthropicIncident: document.getElementById('anthropicStatusIncident'),
         statusSection: document.getElementById('statusSection'),
         statusText: document.getElementById('statusText'),
     };
@@ -195,9 +200,16 @@ function updateData(data) {
     const installsVisible = hasInstalls && !compactHidden('claude_code');
     els.installSection.classList.toggle('visible', installsVisible);
 
+    const anthropic = data.anthropic_status;
+    const anthropicVisible = !!anthropic && !compactHidden('anthropic_status');
+    els.anthropicSection.classList.toggle('visible', anthropicVisible);
+    if (anthropic) {
+        updateAnthropicStatus(anthropic);
+    }
+
     // The "Usage" heading only labels the bars against the other sections;
     // when the usage bars stand alone, drop the now-redundant heading.
-    els.headingUsage.style.display = (hasUsage && !accountVisible && !extraVisible && !installsVisible) ? 'none' : '';
+    els.headingUsage.style.display = (hasUsage && !accountVisible && !extraVisible && !installsVisible && !anthropicVisible) ? 'none' : '';
 
     if (hasInstalls) {
         els.installRows.replaceChildren(...data.installations.map((inst) => {
@@ -212,6 +224,24 @@ function updateData(data) {
     }
 
     updateStatus(data.status);
+}
+
+// Statuspage severity indicators with a dedicated dot color; anything else
+// (e.g. 'unknown' or a future indicator) keeps the neutral gray dot.
+const ANTHROPIC_INDICATORS = ['none', 'minor', 'major', 'critical'];
+
+/**
+ * Update the Anthropic server status row (colored dot, status text,
+ * optional incident name below).
+ *
+ * @param {object} status - { indicator, text, incident } from Python.
+ */
+function updateAnthropicStatus(status) {
+    const indicator = ANTHROPIC_INDICATORS.includes(status.indicator) ? status.indicator : '';
+    els.anthropicDot.className = `anthropic-status-dot ${indicator}`.trim();
+    els.anthropicText.textContent = status.text;
+    els.anthropicIncident.textContent = status.incident || '';
+    els.anthropicIncident.style.display = status.incident ? '' : 'none';
 }
 
 /**

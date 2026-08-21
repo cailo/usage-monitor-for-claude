@@ -6,10 +6,17 @@ Unit tests for tray icon rendering and theme detection.
 """
 from __future__ import annotations
 
+import os
 import unittest
 from unittest.mock import MagicMock, call, patch
 
 from PIL import Image, ImageDraw
+
+# The modules under test bind to Win32 APIs (pystray, winreg, ctypes.windll)
+# at import time.  The Linux port replaces this layer entirely, so there is
+# nothing here to exercise off Windows.
+if os.name != 'nt':
+    raise unittest.SkipTest('Windows-only application layer')
 
 import usage_monitor_for_claude.tray_icon as tray_icon_mod
 

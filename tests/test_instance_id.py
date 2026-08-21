@@ -6,6 +6,7 @@ Unit tests for --config-dir parsing and per-instance name suffixes.
 """
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -42,16 +43,23 @@ class TestParseConfigDir(unittest.TestCase):
     def test_strips_trailing_backslash(self):
         self.assertEqual(parse_config_dir(['app.exe', '--config-dir=C:\\dir\\']), r'C:\dir')
 
+    @unittest.skipUnless(os.name == 'nt', 'os.path.expandvars only expands %VAR% on Windows')
     def test_expands_environment_variables(self):
         """%VAR% syntax works even from shells that do not expand it (PowerShell)."""
         with patch.dict('os.environ', {'USERPROFILE': r'C:\Users\test'}):
             result = parse_config_dir(['app.exe', '--config-dir=%USERPROFILE%\\.claude-second'])
         self.assertEqual(result, r'C:\Users\test\.claude-second')
 
+    @unittest.skipIf(os.name == 'nt', 'os.path.expandvars only expands $VAR on POSIX')
+    def test_expands_posix_environment_variables(self):
+        """$VAR syntax is expanded the same way on Linux."""
+        with patch.dict('os.environ', {'CLAUDE_TEST_HOME': '/home/test'}):
+            result = parse_config_dir(['app.exe', '--config-dir=$CLAUDE_TEST_HOME/.claude-second'])
+        self.assertEqual(result, str(Path('/home/test/.claude-second')))
+
     def test_expands_tilde(self):
-        with patch.dict('os.environ', {'USERPROFILE': r'C:\Users\test'}):
-            result = parse_config_dir(['app.exe', '--config-dir=~/.claude-second'])
-        self.assertEqual(result, r'C:\Users\test\.claude-second')
+        result = parse_config_dir(['app.exe', '--config-dir=~/.claude-second'])
+        self.assertEqual(result, str(Path.home() / '.claude-second'))
 
     def test_last_occurrence_wins(self):
         argv = ['app.exe', '--config-dir=C:\\first', '--config-dir=C:\\second']
@@ -98,7 +106,16 @@ class TestConfigDirSuffix(unittest.TestCase):
         self.assertTrue(suffix.startswith('_'))
         self.assertEqual(len(suffix), 13)
 
-    def test_suffix_stable_across_casing_and_trailing_slash(self):
+    def test_suffix_stable_across_trailing_separator(self):
+        with TemporaryDirectory() as config_tmp:
+            with patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': config_tmp}):
+                suffix_plain = config_dir_suffix()
+            with patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': config_tmp + os.sep}):
+                suffix_variant = config_dir_suffix()
+        self.assertEqual(suffix_plain, suffix_variant)
+
+    @unittest.skipUnless(os.name == 'nt', 'path casing is only insignificant on Windows')
+    def test_suffix_stable_across_casing(self):
         with TemporaryDirectory() as config_tmp:
             with patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': config_tmp}):
                 suffix_plain = config_dir_suffix()

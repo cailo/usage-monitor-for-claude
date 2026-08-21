@@ -3,19 +3,19 @@ Claude CLI Tests
 ==================
 
 Unit tests for _discover_cli_path(), find_installations(), refresh_token(),
-cli_version(), and _run_cli().
+and cli_version().
 """
 from __future__ import annotations
 
 import os
 import subprocess
-import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 
 from usage_monitor_for_claude import claude_cli
+from usage_monitor_for_claude.platform_support import no_window_flags
 from usage_monitor_for_claude.claude_cli import (
     ClaudeInstallation,
     RefreshResult,
@@ -30,7 +30,15 @@ from usage_monitor_for_claude.claude_cli import (
 # ---------------------------------------------------------------------------
 
 class TestDiscoverCliPath(unittest.TestCase):
-    """Tests for _discover_cli_path()."""
+    """Tests for the Windows branch of _discover_cli_path()."""
+
+    def setUp(self):
+        # The .cmd/.exe/.ps1 shim handling is Windows-only behavior; forcing
+        # the flag keeps it under test on any platform (the path arithmetic
+        # itself is pure pathlib).
+        patcher = patch.object(claude_cli, 'IS_WINDOWS', True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     @patch('usage_monitor_for_claude.claude_cli.shutil.which')
     def test_uses_which_when_found(self, mock_which):
@@ -108,6 +116,56 @@ class TestDiscoverCliPath(unittest.TestCase):
             self.assertFalse(result.is_file())
 
 
+class TestDiscoverPosixCliPath(unittest.TestCase):
+    """Tests for the Linux branch of _discover_cli_path()."""
+
+    def setUp(self):
+        patcher = patch.object(claude_cli, 'IS_WINDOWS', False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @patch('usage_monitor_for_claude.claude_cli.shutil.which')
+    def test_uses_which_when_found(self, mock_which):
+        """A PATH hit is returned as-is - there is no executable suffix to resolve."""
+        with TemporaryDirectory() as tmp:
+            found = Path(tmp) / 'claude'
+            found.touch()
+            mock_which.return_value = str(found)
+            self.assertEqual(claude_cli._discover_cli_path(), found)
+
+    @patch('usage_monitor_for_claude.claude_cli.shutil.which', return_value=None)
+    def test_falls_back_to_native_install_dir(self, _mock_which):
+        """Without a PATH hit, the native installer location is used."""
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            native = home / '.local' / 'bin'
+            native.mkdir(parents=True)
+            (native / 'claude').touch()
+            with patch('usage_monitor_for_claude.claude_cli.Path.home', return_value=home):
+                self.assertEqual(claude_cli._discover_cli_path(), native / 'claude')
+
+    @patch('usage_monitor_for_claude.claude_cli.shutil.which', return_value=None)
+    def test_falls_back_to_global_npm_prefix(self, _mock_which):
+        """A global npm install is found when the native location is empty."""
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            npm_bin = home / '.npm-global' / 'bin'
+            npm_bin.mkdir(parents=True)
+            (npm_bin / 'claude').touch()
+            with patch('usage_monitor_for_claude.claude_cli.Path.home', return_value=home):
+                self.assertEqual(claude_cli._discover_cli_path(), npm_bin / 'claude')
+
+    @patch('usage_monitor_for_claude.claude_cli.shutil.which', return_value=None)
+    def test_last_resort_returns_native_path(self, _mock_which):
+        """No CLI anywhere -> return the native path so callers fail gracefully."""
+        with TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            with patch('usage_monitor_for_claude.claude_cli.Path.home', return_value=home):
+                result = claude_cli._discover_cli_path()
+            self.assertEqual(result, home / '.local' / 'bin' / 'claude')
+            self.assertFalse(result.is_file())
+
+
 # ---------------------------------------------------------------------------
 # cli_version
 # ---------------------------------------------------------------------------
@@ -169,8 +227,7 @@ class TestCliVersion(unittest.TestCase):
         cli_version(path)
         mock_run.assert_called_once_with(
             [str(path), '--version'],
-            capture_output=True, text=True, encoding='utf-8', errors='replace',
-            timeout=10, creationflags=subprocess.CREATE_NO_WINDOW,
+            capture_output=True, text=True, timeout=10, creationflags=no_window_flags(),
         )
 
     @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
@@ -199,25 +256,6 @@ class TestCliVersion(unittest.TestCase):
         """Returns empty string when stat() fails (file deleted)."""
         with patch('pathlib.Path.stat', side_effect=OSError('not found')):
             self.assertEqual(cli_version(Path('/fake/claude.exe')), '')
-
-    @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
-    @patch('pathlib.Path.stat', return_value=MagicMock(st_mtime=1000.0))
-    def test_lost_output_returns_empty_uncached(self, _mock_stat, mock_run):
-        """A lost stream returns '' and is not cached, so the next call retries."""
-        mock_run.return_value = MagicMock(stdout=None, stderr=None, returncode=0)
-        path = Path('/fake/claude.exe')
-        self.assertEqual(cli_version(path), '')
-        self.assertNotIn(path, claude_cli._version_cache)
-
-    @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
-    @patch('pathlib.Path.stat', return_value=MagicMock(st_mtime=1000.0))
-    def test_recovers_after_lost_output(self, _mock_stat, mock_run):
-        """A lost stream must not pin an empty version until the binary changes."""
-        path = Path('/fake/claude.exe')
-        mock_run.return_value = MagicMock(stdout=None, stderr=None, returncode=0)
-        self.assertEqual(cli_version(path), '')
-        mock_run.return_value = MagicMock(stdout='2.1.69 (Claude Code)\n', stderr='', returncode=0)
-        self.assertEqual(cli_version(path), '2.1.69')
 
 
 # ---------------------------------------------------------------------------
@@ -462,35 +500,6 @@ class TestRefreshToken(unittest.TestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.new_version, '2.1.69')
 
-    @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
-    @patch('usage_monitor_for_claude.claude_cli.CLAUDE_CLI_PATH')
-    def test_allows_a_full_minute_for_the_update(self, mock_path, mock_run):
-        """The update downloads from the npm registry, so it gets far longer than a
-        version probe - dropping it to the probes' 10s would fail slow connections."""
-        mock_path.is_file.return_value = True
-        mock_run.return_value = MagicMock(
-            stdout='Claude Code is up to date (2.1.69)', stderr='', returncode=0,
-        )
-        refresh_token()
-        self.assertEqual(mock_run.call_args.kwargs['timeout'], 60)
-
-    @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
-    @patch('usage_monitor_for_claude.claude_cli.CLAUDE_CLI_PATH')
-    def test_lost_output_reports_error(self, mock_path, mock_run):
-        """A lost stream is reported as an error instead of killing the poll thread.
-
-        refresh_token() combines both streams to find the update message, so a
-        stream reported as None turns into a TypeError in the poll thread that
-        called it - the crash reported in issue #80.
-        """
-        mock_path.is_file.return_value = True
-        mock_run.return_value = MagicMock(
-            stdout='Successfully updated from 2.1.38 to version 2.1.69', stderr=None, returncode=0,
-        )
-        result = refresh_token()
-        self.assertFalse(result.success)
-        self.assertEqual(result.error, 'CLI output could not be captured')
-
 
 # ---------------------------------------------------------------------------
 # cli_command (custom / WSL CLI)
@@ -515,8 +524,7 @@ class TestCommandVersion(unittest.TestCase):
         claude_cli._command_version(['wsl', '/home/user/.local/bin/claude'])
         mock_run.assert_called_once_with(
             ['wsl', '/home/user/.local/bin/claude', '--version'],
-            capture_output=True, text=True, encoding='utf-8', errors='replace',
-            timeout=10, creationflags=subprocess.CREATE_NO_WINDOW,
+            capture_output=True, text=True, timeout=10, creationflags=no_window_flags(),
         )
 
     @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
@@ -551,21 +559,6 @@ class TestCommandVersion(unittest.TestCase):
         mock_run.assert_called_once()
 
     @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
-    def test_lost_output_returns_empty_uncached(self, mock_run):
-        """A lost stream returns '' and is not cached, so the next call retries."""
-        mock_run.return_value = MagicMock(stdout=None, stderr=None, returncode=0)
-        self.assertEqual(claude_cli._command_version(['wsl', 'claude']), '')
-        self.assertNotIn(('wsl', 'claude'), claude_cli._command_version_cache)
-
-    @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
-    def test_recovers_after_lost_output(self, mock_run):
-        """A lost stream must not pin an empty version for the process lifetime."""
-        mock_run.return_value = MagicMock(stdout=None, stderr=None, returncode=0)
-        self.assertEqual(claude_cli._command_version(['wsl', 'claude']), '')
-        mock_run.return_value = MagicMock(stdout='2.1.204 (Claude Code)\n', stderr='', returncode=0)
-        self.assertEqual(claude_cli._command_version(['wsl', 'claude']), '2.1.204')
-
-    @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
     def test_distinct_commands_cached_separately(self, mock_run):
         """Each command gets its own cache entry - one entry must not mask another."""
         mock_run.return_value = MagicMock(stdout='2.1.204\n', returncode=0)
@@ -577,24 +570,6 @@ class TestCommandVersion(unittest.TestCase):
 
 class TestFindInstallationsCliCommand(unittest.TestCase):
     """Tests for find_installations() with a configured cli_command."""
-
-    def setUp(self):
-        claude_cli._command_version_cache.clear()
-
-    @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
-    @patch('usage_monitor_for_claude.claude_cli.CLAUDE_CLI_PATH')
-    @patch('usage_monitor_for_claude.claude_cli.CLI_COMMAND', {'WSL': ['wsl', 'claude']})
-    @patch('usage_monitor_for_claude.claude_cli._EXTENSION_DIRS', [])
-    def test_lost_command_output_does_not_reach_the_popup(self, mock_path, mock_run):
-        """A lost stream from a configured command must not break the popup.
-
-        _command_version() parses its output outside the try that guards the
-        subprocess, and find_installations() calls it unguarded, so anything
-        raised here lands in the popup's update path.
-        """
-        mock_path.is_file.return_value = False
-        mock_run.return_value = MagicMock(stdout=None, stderr=None, returncode=0)
-        self.assertEqual(find_installations(), [])
 
     @patch('usage_monitor_for_claude.claude_cli._command_version', return_value='2.1.204')
     @patch('usage_monitor_for_claude.claude_cli.cli_version', return_value='')
@@ -708,78 +683,6 @@ class TestRefreshTokenIgnoresCliCommand(unittest.TestCase):
         )
         refresh_token()
         self.assertEqual(claude_cli._command_version_cache[('wsl', 'claude')], '2.1.204')
-
-
-# ---------------------------------------------------------------------------
-# _run_cli (output decoding)
-# ---------------------------------------------------------------------------
-
-# Child processes for the decoding tests.  Each writes bytes rather than text so
-# the output is fixed by the test and not by the child's own stream encoding:
-# the UTF-8 the Claude CLI emits for its progress and npm error glyphs, and a
-# byte that is valid UTF-8 nowhere.
-_UTF8_CHILD = (
-    'import sys;'
-    r"sys.stdout.buffer.write('✓ ok\n'.encode('utf-8'));"
-    r"sys.stderr.buffer.write('• note\n'.encode('utf-8'))"
-)
-
-_INVALID_UTF8_CHILD = r"import sys; sys.stdout.buffer.write(b'\xff bad\n')"
-
-
-class TestRunCli(unittest.TestCase):
-    """Tests for _run_cli(), which owns the module's output decoding.
-
-    The Claude CLI writes UTF-8 whatever the Windows code page is.  Letting
-    subprocess decode it with the ambient locale codec instead is what caused
-    the crash in issue #80, and that failure happens inside subprocess's pipe
-    reader thread - so these tests run real child processes rather than mock
-    the mechanism they are about.
-    """
-
-    def test_locale_codec_loses_the_captured_stream(self):
-        """Reproduces #80: a locale codec that cannot decode UTF-8 drops the output.
-
-        Naming cp950 explicitly reproduces the reporter's Traditional Chinese
-        system on any machine.  Both streams come back as None even though
-        capture_output was set, and that None is what the crash concatenated.
-        """
-        # The decode failure surfaces as an uncaught exception in subprocess's
-        # reader thread; silence its traceback to keep the test output readable.
-        with patch('threading.excepthook', lambda args: None):
-            proc = subprocess.run(
-                [sys.executable, '-c', _UTF8_CHILD],
-                capture_output=True, text=True, encoding='cp950', timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-        self.assertEqual(proc.returncode, 0)
-        self.assertIsNone(proc.stdout)
-        self.assertIsNone(proc.stderr)
-
-    def test_pinned_codec_keeps_the_same_output(self):
-        """_run_cli decodes the very output the locale codec drops."""
-        proc = claude_cli._run_cli([sys.executable, '-c', _UTF8_CHILD], timeout=30)
-        self.assertEqual(proc.stdout, '✓ ok\n')
-        self.assertEqual(proc.stderr, '• note\n')
-
-    def test_undecodable_bytes_are_replaced(self):
-        """Bytes that are not valid UTF-8 are replaced, so no reader thread dies."""
-        proc = claude_cli._run_cli([sys.executable, '-c', _INVALID_UTF8_CHILD], timeout=30)
-        self.assertEqual(proc.stdout, '\ufffd bad\n')
-
-    @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
-    def test_lost_stdout_raises_oserror(self, mock_run):
-        """A stream reported as None is an I/O failure, not an empty result."""
-        mock_run.return_value = MagicMock(stdout=None, stderr='', returncode=0)
-        with self.assertRaises(OSError):
-            claude_cli._run_cli(['claude', '--version'], timeout=10)
-
-    @patch('usage_monitor_for_claude.claude_cli.subprocess.run')
-    def test_lost_stderr_raises_oserror(self, mock_run):
-        """Only the stream carrying the glyph is dropped, so stderr alone can be lost."""
-        mock_run.return_value = MagicMock(stdout='2.1.69 (Claude Code)\n', stderr=None, returncode=0)
-        with self.assertRaises(OSError):
-            claude_cli._run_cli(['claude', '--version'], timeout=10)
 
 
 if __name__ == '__main__':

@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 import webview  # type: ignore[import-untyped]  # no type stubs available
 
 from . import __version__
+from .anthropic_status import STATUS_PAGE_URL
 from .claude_cli import CHANGELOG_URL, find_installations
 from .formatting import divider_positions, elapsed_pct, expand_popup_fields, field_period, format_credits, popup_label, time_until
 from .i18n import T
@@ -50,6 +51,7 @@ class _MONITORINFO(ctypes.Structure):
 __all__ = ['UsagePopup']
 
 if TYPE_CHECKING:
+    from .anthropic_status import AnthropicStatus
     from .app import UsageMonitorForClaude
     from .cache import CacheSnapshot
 
@@ -70,6 +72,7 @@ def _usage_entries(usage: dict[str, Any]) -> list[tuple[str, dict[str, Any] | No
 
 def _snapshot_to_dict(
     snap: CacheSnapshot, installations: list[dict[str, str]] | None = None, next_poll_time: float | None = None,
+    anthropic_status: AnthropicStatus | None = None,
 ) -> dict[str, Any]:
     """Convert a CacheSnapshot to a JSON-serializable dict for the popup JS.
 
@@ -81,6 +84,9 @@ def _snapshot_to_dict(
         Pre-computed installation list, or None to detect now.
     next_poll_time : float or None
         Unix timestamp of the next scheduled API poll.
+    anthropic_status : AnthropicStatus or None
+        Last known Anthropic server status, or None when the indicator is
+        disabled or nothing was fetched yet (hides the status row).
     """
     # Profile - truthiness check (not `is not None`): hides the account section when the API
     # returns an empty or incomplete response, instead of rendering empty Email/Plan fields.
@@ -153,6 +159,21 @@ def _snapshot_to_dict(
     if installations is None:
         installations = [{'name': i.name, 'version': i.version} for i in find_installations()]
 
+    # Anthropic server status row.  The status feed speaks English, so its
+    # description is shown verbatim; only the unreachable-feed fallback text
+    # comes from the translations.
+    status_row = None
+    if anthropic_status is not None:
+        if anthropic_status.indicator == 'unknown':
+            status_text = T['anthropic_status_unavailable']
+        else:
+            status_text = anthropic_status.description or T['anthropic_status_unavailable']
+        status_row = {
+            'indicator': anthropic_status.indicator,
+            'text': status_text,
+            'incident': anthropic_status.incident_name,
+        }
+
     # Status - pass raw timestamps for JS live timer; fallback text for initial load
     if not snap.usage:
         if snap.last_error:
@@ -172,11 +193,12 @@ def _snapshot_to_dict(
         'usage': usage,
         'extra': extra,
         'installations': installations,
+        'anthropic_status': status_row,
         'status': status,
     }
 
 
-def _init_config(snap: CacheSnapshot, next_poll_time: float | None = None) -> dict[str, Any]:
+def _init_config(snap: CacheSnapshot, next_poll_time: float | None = None, anthropic_status: AnthropicStatus | None = None) -> dict[str, Any]:
     """Build the config object passed to JS ``init()`` after the page loads."""
     return {
         'colors': {
@@ -194,7 +216,7 @@ def _init_config(snap: CacheSnapshot, next_poll_time: float | None = None) -> di
         },
         'app_version': __version__,
         'compact_hide': COMPACT_HIDE,
-        'data': _snapshot_to_dict(snap, next_poll_time=next_poll_time),
+        'data': _snapshot_to_dict(snap, next_poll_time=next_poll_time, anthropic_status=anthropic_status),
     }
 
 
@@ -213,6 +235,9 @@ class _PopupApi:
 
     def open_url(self) -> None:
         webbrowser.open(CHANGELOG_URL)
+
+    def open_status_url(self) -> None:
+        webbrowser.open(STATUS_PAGE_URL)
 
     def set_pinned(self, pinned: bool) -> bool:
         return self._popup._set_pinned(pinned)
@@ -309,7 +334,7 @@ class UsagePopup:
 
     def _on_loaded(self) -> None:
         """Inject config and show the window transparently for layout."""
-        config = _init_config(self.app.cache.snapshot, next_poll_time=self.app._next_poll_time)
+        config = _init_config(self.app.cache.snapshot, next_poll_time=self.app._next_poll_time, anthropic_status=self.app._anthropic_status)
         self._window.evaluate_js(f'init({json.dumps(config)})')
 
         self._popup_hwnd = self._window.native.Handle.ToInt32()
@@ -551,6 +576,7 @@ class UsagePopup:
         """Poll for data changes and push updates to the popup."""
         cached_installations = [{'name': i.name, 'version': i.version} for i in find_installations()]
         last_next_poll_time = self.app._next_poll_time
+        last_anthropic_status = self.app._anthropic_status
         while self._running:
             time.sleep(self._CHECK_MS / 1000)
             if not self._running:
@@ -558,17 +584,19 @@ class UsagePopup:
             try:
                 snap = self.app.cache.snapshot
                 next_poll_time = self.app._next_poll_time
-                if snap.version == self._last_version and next_poll_time == last_next_poll_time:
+                anthropic_status = self.app._anthropic_status
+                if snap.version == self._last_version and next_poll_time == last_next_poll_time and anthropic_status == last_anthropic_status:
                     continue
                 if snap.version != self._last_version:
                     cached_installations = [{'name': i.name, 'version': i.version} for i in find_installations()]
-                data = _snapshot_to_dict(snap, installations=cached_installations, next_poll_time=next_poll_time)
+                data = _snapshot_to_dict(snap, installations=cached_installations, next_poll_time=next_poll_time, anthropic_status=anthropic_status)
                 self._window.evaluate_js(f'updateData({json.dumps(data)})')
                 # Commit the markers only after a successful push, so a failed
                 # update is retried on the next tick instead of being skipped
                 # by the dedup check until the next data change.
                 self._last_version = snap.version
                 last_next_poll_time = next_poll_time
+                last_anthropic_status = anthropic_status
             except Exception:
                 # A transient failure (snapshot conversion, filesystem scan,
                 # one-off evaluate_js hiccup) must not end the update stream -

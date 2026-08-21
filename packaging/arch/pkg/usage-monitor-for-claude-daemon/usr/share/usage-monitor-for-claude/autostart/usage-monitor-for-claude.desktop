@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Usage Monitor for Claude
+Comment=Claude usage quotas in the system tray
+Comment[es]=Cuotas de uso de Claude en la bandeja del sistema
+Exec=/usr/bin/usage-monitor-for-claude-daemon
+Icon=usage-monitor-for-claude
+Terminal=false
+X-GNOME-Autostart-enabled=true

@@ -1,0 +1,8 @@
+{
+    "uuid": "usage-monitor-for-claude@cailo.github.com",
+    "name": "Usage Monitor for Claude",
+    "description": "Claude usage quotas in the top panel. Reads a finished snapshot from the Usage Monitor daemon over D-Bus - no credential ever enters the shell process.",
+    "shell-version": ["45", "46", "47", "48", "49"],
+    "version-name": "1.0.0",
+    "url": "https://github.com/cailo/usage-monitor-for-claude"
+}

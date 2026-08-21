@@ -47,6 +47,18 @@ When a background token refresh installs a new Claude CLI version, the app shows
 |-----|---------|-------------|
 | `notify_claude_update` | `true` | Show a notification when a background token refresh installs a new Claude CLI version |
 
+## Anthropic status
+
+The popup shows the current status of the Anthropic servers ([status.anthropic.com](https://status.anthropic.com)) as a colored dot with the reported status text - green while all systems are operational, yellow/orange/red during an incident (with the incident name below), gray when the status feed is unreachable. Clicking the row opens the status page. While an incident is ongoing, the tray tooltip carries a warning line, and a notification fires when an incident starts and when all systems are operational again.
+
+The status is read from the public Statuspage feed at `status.anthropic.com` - a read-only endpoint that involves no credentials. If you prefer the app to communicate with `api.anthropic.com` only, set `status_enabled` to `false` to turn the whole feature off; the app then never contacts the status host.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `status_enabled` | `true` | Show the Anthropic server status in the popup and tooltip. `false` disables the feature completely |
+| `status_poll_interval` | `300` | Minimum seconds between status feed checks - the status changes rarely, so it is polled far less often than the usage data |
+| `status_notifications` | `true` | Notify when an incident starts (status leaves "operational") and when it is resolved |
+
 ## Claude CLI command
 
 The popup lists the Claude Code version of the native Windows CLI and of each IDE extension it finds. Installs it cannot see - most commonly a Claude Code running inside WSL - are missing from that list. Use `cli_command` to have their versions reported as well.
@@ -133,7 +145,7 @@ Must be an array of non-empty strings. Duplicates are silently removed. Unknown 
 
 Entries can be either a **section key** or a **usage field name**:
 
-**Section keys:** `account` (email and plan), `extra_usage` (paid overage bar), `claude_code` (installed versions), `status` (the footer with the update time). The usage bar section itself cannot be hidden as a whole - hide individual bars by their field name instead. When hiding leaves only the usage bars (no other section visible), the "Usage" heading is dropped automatically, since it has nothing left to distinguish the bars from.
+**Section keys:** `account` (email and plan), `extra_usage` (paid overage bar), `claude_code` (installed versions), `anthropic_status` (the [Anthropic server status](#anthropic-status) row), `status` (the footer with the update time). The usage bar section itself cannot be hidden as a whole - hide individual bars by their field name instead. When hiding leaves only the usage bars (no other section visible), the "Usage" heading is dropped automatically, since it has nothing left to distinguish the bars from.
 
 **Usage field names:** any quota field, e.g. `five_hour`, `seven_day`, `seven_day_sonnet`, `seven_day_opus`, `seven_day_cowork`, `seven_day_oauth_apps`. This hides that single bar in the pinned view, independent of [`popup_fields`](#popup-fields) (which controls the normal, unpinned popup).
 

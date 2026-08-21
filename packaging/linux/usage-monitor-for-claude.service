@@ -1,0 +1,20 @@
+[Unit]
+Description=Usage Monitor for Claude
+Documentation=https://github.com/cailo/usage-monitor-for-claude
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/usage-monitor-for-claude-daemon
+Restart=on-failure
+RestartSec=5
+# The daemon reads ~/.claude/.credentials.json and talks to api.anthropic.com.
+# It writes nothing, so it needs no state, cache or runtime directory.
+
+[Install]
+# default.target, not graphical-session.target: a Plasma session started the
+# classic way (the default on Arch) never activates graphical-session.target,
+# so a unit anchored there would install without ever starting.  The daemon
+# has no window of its own and degrades gracefully when the notification
+# server or screen locker is not up yet, so starting with the user session
+# is safe on both systemd-managed and classic sessions.
+WantedBy=default.target

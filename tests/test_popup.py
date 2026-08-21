@@ -7,13 +7,22 @@ and _init_config.
 """
 from __future__ import annotations
 
+import os
 import ctypes
 import threading
 import time
 import unittest
 from unittest.mock import MagicMock, patch
 
+# The modules under test bind to Win32 APIs (pystray, winreg, ctypes.windll)
+# at import time.  The Linux port replaces this layer entirely, so there is
+# nothing here to exercise off Windows.
+if os.name != 'nt':
+    raise unittest.SkipTest('Windows-only application layer')
+
+from usage_monitor_for_claude.anthropic_status import STATUS_UNKNOWN, AnthropicStatus
 from usage_monitor_for_claude.cache import CacheSnapshot
+from usage_monitor_for_claude.i18n import T
 from usage_monitor_for_claude.popup import (
     UsagePopup, _BASELINE_DPI, _MONITORINFO, _SWP_NOACTIVATE, _SWP_NOSIZE, _SWP_NOZORDER,
     _init_config, _snapshot_to_dict, _usage_entries,
@@ -509,9 +518,40 @@ class TestSnapshotToDict(unittest.TestCase):
     # -- top-level dict structure --
 
     def test_all_top_level_keys_present(self):
-        """Result always has profile, usage, extra, installations, status."""
+        """Result always has profile, usage, extra, installations, anthropic_status, status."""
         result = _snapshot_to_dict(_snap(), installations=[])
-        self.assertEqual(set(result.keys()), {'profile', 'usage', 'extra', 'installations', 'status'})
+        self.assertEqual(set(result.keys()), {'profile', 'usage', 'extra', 'installations', 'anthropic_status', 'status'})
+
+    # -- anthropic status row --
+
+    def test_anthropic_status_hidden_without_data(self):
+        """No status row when the indicator is disabled or nothing was fetched yet."""
+        result = _snapshot_to_dict(_snap(), installations=[])
+        self.assertIsNone(result['anthropic_status'])
+
+    def test_anthropic_status_operational(self):
+        """A known indicator shows the feed's own description verbatim."""
+        status = AnthropicStatus(indicator='none', description='All Systems Operational')
+        result = _snapshot_to_dict(_snap(), installations=[], anthropic_status=status)
+        self.assertEqual(result['anthropic_status'], {'indicator': 'none', 'text': 'All Systems Operational', 'incident': None})
+
+    def test_anthropic_status_incident_carried(self):
+        status = AnthropicStatus(indicator='major', description='Partial System Outage', incident_name='Elevated errors')
+        result = _snapshot_to_dict(_snap(), installations=[], anthropic_status=status)
+        self.assertEqual(result['anthropic_status']['indicator'], 'major')
+        self.assertEqual(result['anthropic_status']['incident'], 'Elevated errors')
+
+    def test_anthropic_status_unknown_uses_fallback_text(self):
+        """An unreachable feed shows the localized unavailable text, not an empty row."""
+        result = _snapshot_to_dict(_snap(), installations=[], anthropic_status=STATUS_UNKNOWN)
+        self.assertEqual(result['anthropic_status']['indicator'], 'unknown')
+        self.assertEqual(result['anthropic_status']['text'], T['anthropic_status_unavailable'])
+
+    def test_anthropic_status_empty_description_uses_fallback_text(self):
+        """A feed response without a description never renders an empty row."""
+        status = AnthropicStatus(indicator='minor', description='')
+        result = _snapshot_to_dict(_snap(), installations=[], anthropic_status=status)
+        self.assertEqual(result['anthropic_status']['text'], T['anthropic_status_unavailable'])
 
 
 # ---------------------------------------------------------------------------
@@ -585,7 +625,13 @@ class TestInitConfig(unittest.TestCase):
         snap = _snap(profile={'account': {'email': 'a@b.com'}, 'organization': {}})
         config = _init_config(snap)
         self.assertEqual(config['data']['profile']['email'], 'a@b.com')
-        self.assertEqual(set(config['data'].keys()), {'profile', 'usage', 'extra', 'installations', 'status'})
+        self.assertEqual(set(config['data'].keys()), {'profile', 'usage', 'extra', 'installations', 'anthropic_status', 'status'})
+
+    def test_anthropic_status_passed_through_to_data(self):
+        """The status passed to _init_config lands in the initial data snapshot."""
+        status = AnthropicStatus(indicator='minor', description='Minor Service Outage')
+        config = _init_config(_snap(), anthropic_status=status)
+        self.assertEqual(config['data']['anthropic_status']['indicator'], 'minor')
 
 
 # ---------------------------------------------------------------------------

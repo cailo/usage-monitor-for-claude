@@ -149,9 +149,10 @@ class TestLoadTranslations(unittest.TestCase):
     """Tests for load_translations()."""
 
     @patch('usage_monitor_for_claude.settings.LANGUAGE', '')
+    @patch('usage_monitor_for_claude.i18n.desktop_ui_language', return_value='')
     @patch('usage_monitor_for_claude.i18n.locale.normalize', side_effect=_mock_normalize)
     @patch('usage_monitor_for_claude.i18n.locale.getlocale', return_value=('de_DE', 'UTF-8'))
-    def test_loads_detected_locale(self, _mock_get, _mock_norm):
+    def test_loads_detected_locale(self, _mock_get, _mock_norm, _mock_desktop):
         """Loads the JSON file matching the detected system locale."""
         with TemporaryDirectory() as tmp:
             locale_dir = Path(tmp)
@@ -164,9 +165,10 @@ class TestLoadTranslations(unittest.TestCase):
         self.assertEqual(result['title'], 'Deutsch')
 
     @patch('usage_monitor_for_claude.settings.LANGUAGE', '')
+    @patch('usage_monitor_for_claude.i18n.desktop_ui_language', return_value='')
     @patch('usage_monitor_for_claude.i18n.locale.normalize', side_effect=_mock_normalize)
     @patch('usage_monitor_for_claude.i18n.locale.getlocale', return_value=(None, None))
-    def test_none_locale_falls_back_to_english(self, _mock_get, _mock_norm):
+    def test_none_locale_falls_back_to_english(self, _mock_get, _mock_norm, _mock_desktop):
         """None from getlocale() falls back to English."""
         with TemporaryDirectory() as tmp:
             locale_dir = Path(tmp)
@@ -191,9 +193,10 @@ class TestLoadTranslations(unittest.TestCase):
         self.assertEqual(result['title'], 'Japanese')
 
     @patch('usage_monitor_for_claude.settings.LANGUAGE', 'xx')
+    @patch('usage_monitor_for_claude.i18n.desktop_ui_language', return_value='')
     @patch('usage_monitor_for_claude.i18n.locale.normalize', side_effect=_mock_normalize)
     @patch('usage_monitor_for_claude.i18n.locale.getlocale', return_value=('de_DE', 'UTF-8'))
-    def test_invalid_language_setting_falls_back_to_locale(self, _mock_get, _mock_norm):
+    def test_invalid_language_setting_falls_back_to_locale(self, _mock_get, _mock_norm, _mock_desktop):
         """Invalid LANGUAGE setting falls back to locale detection."""
         with TemporaryDirectory() as tmp:
             locale_dir = Path(tmp)
@@ -204,6 +207,36 @@ class TestLoadTranslations(unittest.TestCase):
                 result = load_translations()
 
         self.assertEqual(result['title'], 'Deutsch')
+
+
+class TestDesktopLanguagePreferred(unittest.TestCase):
+    """Tests that the desktop interface language outranks the regional formats."""
+
+    def _load(self, desktop_language: str, format_locale: str | None) -> dict:
+        """Load translations for a desktop language paired with a formats locale."""
+        with TemporaryDirectory() as tmp:
+            locale_dir = Path(tmp)
+            (locale_dir / 'en.json').write_text('{"title": "English"}')
+            (locale_dir / 'es.json').write_text('{"title": "Espanol"}')
+
+            with patch('usage_monitor_for_claude.settings.LANGUAGE', ''), \
+                 patch('usage_monitor_for_claude.i18n.desktop_ui_language', return_value=desktop_language), \
+                 patch('usage_monitor_for_claude.i18n.locale.normalize', side_effect=_mock_normalize), \
+                 patch('usage_monitor_for_claude.i18n.locale.getlocale', return_value=(format_locale, 'UTF-8')), \
+                 patch('usage_monitor_for_claude.i18n.LOCALE_DIR', locale_dir):
+                return load_translations()
+
+    def test_desktop_language_beats_format_locale(self):
+        """An English desktop with Argentine number formats renders in English."""
+        self.assertEqual(self._load('en_US', 'es_AR')['title'], 'English')
+
+    def test_format_locale_used_when_desktop_reports_nothing(self):
+        """Without a desktop language the formats locale is the only signal left."""
+        self.assertEqual(self._load('', 'es_AR')['title'], 'Espanol')
+
+    def test_unsupported_desktop_language_falls_back_to_english(self):
+        """A language with no locale file falls back to English rather than to the formats locale."""
+        self.assertEqual(self._load('nl_NL', 'es_AR')['title'], 'English')
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +313,49 @@ class TestLocaleConsistency(unittest.TestCase):
                     f'{lang}.json key "{key}": expected {type(self.reference[key]).__name__}, '
                     f'got {type(data[key]).__name__}',
                 )
+
+
+class TestPanelStatusPlaceholders(unittest.TestCase):
+    """The Linux panel frontends substitute these placeholders literally.
+
+    Both the GNOME extension (``statusText.js``) and the Plasma applet
+    (``Popup.qml``) build the footer by replacing ``{s}``, ``{h}``, ``{m}``
+    and ``{duration}`` in these templates.  A translation that renames a
+    placeholder, or drops one, leaves the raw brace on screen in both
+    desktops without raising anything - the strings are data, so nothing
+    else in the suite would notice.
+    """
+
+    # Exactly what the frontends supply for each template. A placeholder the
+    # frontend does not provide would render as an empty string; one it
+    # provides but the template omits would silently disappear.
+    EXPECTED_PLACEHOLDERS = {
+        'duration_hm': {'h', 'm'},
+        'duration_m': {'m'},
+        'duration_s': {'s'},
+        'status_updated': {'duration'},
+        'status_updated_s': {'s'},
+        'status_next_update': {'duration'},
+    }
+
+    @classmethod
+    def setUpClass(cls):
+        cls.translations = {
+            path.stem: json.loads(path.read_text(encoding='utf-8'))
+            for path in sorted(LOCALE_DIR.glob('*.json'))
+        }
+
+    def test_every_locale_uses_exactly_the_expected_placeholders(self):
+        for lang, data in self.translations.items():
+            for key, expected in self.EXPECTED_PLACEHOLDERS.items():
+                with self.subTest(locale=lang, key=key):
+                    self.assertIn(key, data, f'{lang}.json is missing "{key}"')
+                    found = set(re.findall(r'\{(\w+)\}', data[key]))
+                    self.assertEqual(
+                        found, expected,
+                        f'{lang}.json key "{key}" = {data[key]!r}: '
+                        f'expected placeholders {sorted(expected)}, found {sorted(found)}',
+                    )
 
 
 if __name__ == '__main__':

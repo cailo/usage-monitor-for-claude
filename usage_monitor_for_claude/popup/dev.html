@@ -57,6 +57,15 @@
 <body>
 <div class="dev-controls">
     <select id="langSelect" title="Language"></select>
+    <select id="statusSelect" title="Anthropic status">
+        <option value="">Status: preset default</option>
+        <option value="none">Status: operational</option>
+        <option value="minor">Status: minor</option>
+        <option value="major">Status: major</option>
+        <option value="critical">Status: critical</option>
+        <option value="unknown">Status: unknown</option>
+        <option value="hidden">Status: hidden (disabled)</option>
+    </select>
     <button onclick="loadPreset('full')">Full data</button>
     <button onclick="loadPreset('minimal')">Minimal (next update)</button>
     <button onclick="loadPreset('error')">Error state</button>
@@ -81,6 +90,17 @@ const LANGS = [
     ['zh-CN', 'Chinese (Simpl.)'], ['zh-TW', 'Chinese (Trad.)'],
 ];
 
+// Anthropic status states for the preview (statusSelect overrides the preset's
+// default; 'hidden' previews the disabled feature).  The real status feed
+// speaks English, so only the unreachable-feed text comes from the locale.
+const ANTHROPIC_STATES = {
+    none: () => ({ indicator: 'none', text: 'All Systems Operational', incident: null }),
+    minor: () => ({ indicator: 'minor', text: 'Minor Service Outage', incident: 'Elevated errors on Claude API requests' }),
+    major: () => ({ indicator: 'major', text: 'Partial System Outage', incident: 'Elevated errors on Claude API requests' }),
+    critical: () => ({ indicator: 'critical', text: 'Major System Outage', incident: 'Full outage across Claude services' }),
+    unknown: (loc) => ({ indicator: 'unknown', text: loc.anthropic_status_unavailable, incident: null }),
+};
+
 // Presets carry *semantic* fields; display strings are built from the loaded
 // locale so every text case can be inspected in any language.
 const PRESETS = {
@@ -103,6 +123,7 @@ const PRESETS = {
             { name: 'Cursor', version: '2.1.65' },
         ],
         status: () => ({ last_success_time: now() - 3, next_poll_time: now() + 20, refreshing: false, error: null }),
+        anthropic: 'none',
     },
     minimal: {
         profile: null,
@@ -114,6 +135,7 @@ const PRESETS = {
         installations: [],
         // ~90s ago + next poll soon -> "Updated 1m ago . Next update in 1m" (the overflow case from issue #53).
         status: () => ({ last_success_time: now() - 90, next_poll_time: now() + 90, refreshing: false, error: null }),
+        anthropic: null,
     },
     error: {
         profile: { email: 'user@example.com', plan: 'Max' },
@@ -126,6 +148,7 @@ const PRESETS = {
         extra: null,
         installations: [{ name: 'CLI', version: '2.1.69' }],
         status: () => ({ last_success_time: now() - 300, next_poll_time: now() + 30, refreshing: false, error: 'Could not connect to Anthropic API.' }),
+        anthropic: 'major',
     },
     refreshing: {
         profile: { email: 'user@example.com', plan: 'Max (Team)' },
@@ -137,15 +160,18 @@ const PRESETS = {
         installations: [{ name: 'CLI', version: '2.1.69' }],
         // ~65 min ago -> exercises the "{h}h {m}m" duration variant in the footer.
         status: () => ({ last_success_time: now() - 3900, next_poll_time: null, refreshing: true, error: null }),
+        anthropic: 'minor',
     },
     loading: {
         profile: null, usage: [], extra: null, installations: [],
         status: { staticKey: 'status_refreshing', is_error: false, refreshing: true },
+        anthropic: 'unknown',
     },
 };
 
 const iframe = document.getElementById('popup');
 const langSelect = document.getElementById('langSelect');
+const statusSelect = document.getElementById('statusSelect');
 const win = () => iframe.contentWindow;
 const now = () => Date.now() / 1000;
 
@@ -210,7 +236,10 @@ function resolveData(name, loc) {
         status = { text: loc[status.staticKey], is_error: status.is_error, refreshing: status.refreshing };
     }
 
-    return { profile: preset.profile, usage, extra, installations: preset.installations || [], status };
+    const stateKey = statusSelect.value || preset.anthropic;
+    const anthropic_status = stateKey && stateKey !== 'hidden' ? ANTHROPIC_STATES[stateKey](loc) : null;
+
+    return { profile: preset.profile, usage, extra, installations: preset.installations || [], anthropic_status, status };
 }
 
 // Try both layouts: server rooted at the repo (dev.html under
@@ -239,7 +268,7 @@ async function applyLanguage(code) {
     currentLang = code;
     currentLocale = await loadLocale(code);
     await reloadFrame();
-    win().pywebview = { api: { close() {}, open_url() {},
+    win().pywebview = { api: { close() {}, open_url() {}, open_status_url() {},
         set_pinned(pinned) { return Promise.resolve(pinned); },
         begin_drag() { return Promise.resolve(true); },
         drag() { return Promise.resolve(true); },
@@ -286,6 +315,7 @@ for (const [code, name] of LANGS) {
 }
 langSelect.value = currentLang;
 langSelect.addEventListener('change', () => applyLanguage(langSelect.value));
+statusSelect.addEventListener('change', () => loadPreset(currentPreset));
 
 (async () => {
     const hash = location.hash.slice(1);

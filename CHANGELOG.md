@@ -7,24 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-[Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.21.0...HEAD)
-
-## [1.21.0] - 2026-08-21
-
 ### Added
 
 - Extra usage without a monthly limit (uncapped pay-as-you-go overage, the usual state for Team and Enterprise plans) now appears in the popup as the amount spent - previously the Extra Usage section stayed hidden unless a monthly limit was configured, silently hiding real spending (thanks to [@joeklittle](https://github.com/joeklittle) for the contribution)
 - New `alert_extra_usage_spent` setting - absolute spending amounts in your billing currency (e.g. `[50, 100, 150]`) that trigger a notification when extra-usage spending crosses them; complements the percentage thresholds and is the only alert that can fire for uncapped extra usage, where no percentage exists (thanks to [@joeklittle](https://github.com/joeklittle) for the contribution)
 - [New `icon_style` setting](https://github.com/jens-duttke/usage-monitor-for-claude/issues/78) - set it to `"numbers"` to show both `icon_fields` values as two stacked percentages on the tray icon instead of one percentage with two bars; each row shows `✕` or `$` when its quota is exhausted (thanks to [@Searcus](https://github.com/Searcus) for the suggestion)
+- Anthropic server status indicator - the popup now shows the current status of [status.anthropic.com](https://status.anthropic.com) as a colored dot with the reported status text (click the row to open the status page), the tray tooltip carries a warning line while an incident is ongoing, and a notification fires when an incident starts and when all systems are operational again. Configurable via the new `status_enabled`, `status_poll_interval`, and `status_notifications` settings; set `status_enabled` to `false` to turn the feature off entirely, restoring the strict `api.anthropic.com`-only network profile
+- Linux support (KDE Plasma 6 and GNOME 45+) - the monitor now runs on Linux as a headless background daemon paired with a panel frontend for your desktop, either a Plasma applet or a GNOME Shell extension, with the same quota tracking, threshold alerts, event commands and 13 translations as the Windows build; install it with `packaging/arch/install.sh`, which builds the packages and installs a frontend for every desktop shell it finds - a machine carrying both Plasma and GNOME gets both and keeps working whichever session you log into. A few behaviors necessarily differ - the popup is positioned by the panel instead of the tray, autostart uses `~/.config/autostart/` instead of the registry, and the double-click event command moves to the middle button because a panel icon cannot take a double click without delaying every single click. On Plasma under Wayland `idle_pause` additionally reacts to the session locking rather than to you stopping typing, because Wayland exposes no idle time to applications; on GNOME it works as it does on Windows. See [docs/linux.md](docs/linux.md) for the full list
 
 ### Fixed
 
 - With uncapped extra usage enabled, an exhausted quota now shows the "extra usage active" tray indicator instead of the exhausted glyph - work continues on paid overage, so the icon no longer suggests Claude has stopped (thanks to [@joeklittle](https://github.com/joeklittle) for the contribution)
 - The startup and double-click event commands no longer report `USAGE_MONITOR_EXTRA_LIMIT` as a zero amount for uncapped extra usage - the variable is now omitted when there is no monthly limit (thanks to [@joeklittle](https://github.com/joeklittle) for the contribution)
-- On systems with a non-UTF-8 code page (Traditional Chinese, Japanese, Korean and others), the tray icon no longer stops updating after an automatic token renewal - the Claude CLI's output is now read as UTF-8 instead of with the system code page, which crashed the update loop as soon as the CLI printed a non-ASCII character (thanks to [@daweiliutw-ctrl](https://github.com/daweiliutw-ctrl) for reporting [#80](https://github.com/jens-duttke/usage-monitor-for-claude/issues/80))
 - After an account switch, the tray icon and popup now show the new account's usage right away - previously, when the switch happened while a usage request was already running, the "account switched" notification appeared next to the previous account's numbers, which stayed on screen until the next scheduled poll
 
-[Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.20.0...v1.21.0)
+[Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.20.0...HEAD)
 
 ## [1.20.0] - 2026-07-17
 

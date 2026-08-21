@@ -1,0 +1,169 @@
+/*
+ * Usage Monitor for Claude - GNOME Shell styling.
+ *
+ * The `-usage-monitor-*` entries are custom theme properties read from the
+ * drawing code through St.ThemeNode.lookup_color(). Keeping the palette in
+ * CSS rather than hardcoded in JavaScript means a user with a custom shell
+ * theme can restyle the bars without touching the extension.
+ */
+
+.usage-monitor-icon {
+    -usage-monitor-warn-color: #e01b24;
+    width: 16px;
+    height: 16px;
+}
+
+.usage-monitor-popup {
+    min-width: 22em;
+}
+
+.usage-monitor-header {
+    spacing: 6px;
+}
+
+.usage-monitor-title {
+    font-weight: bold;
+}
+
+.usage-monitor-refresh {
+    padding: 2px;
+    border-radius: 99px;
+}
+
+.usage-monitor-refresh:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.usage-monitor-content {
+    spacing: 16px;
+    padding-top: 4px;
+}
+
+.usage-monitor-section {
+    spacing: 6px;
+}
+
+.usage-monitor-heading {
+    font-weight: bold;
+    font-size: 0.85em;
+    opacity: 0.55;
+}
+
+.usage-monitor-link {
+    font-size: 0.85em;
+    color: #78aeed;
+}
+
+/* Same cascade fallback as the bar accent: ignored before GNOME 47. */
+.usage-monitor-link {
+    color: -st-accent-color;
+}
+
+.usage-monitor-link:hover {
+    text-decoration: underline;
+}
+
+.usage-monitor-row {
+    spacing: 12px;
+}
+
+.usage-monitor-row-name {
+    opacity: 0.7;
+}
+
+/* Quota bars ------------------------------------------------------------ */
+
+.usage-monitor-bar {
+    spacing: 4px;
+}
+
+.usage-monitor-bar-header {
+    spacing: 6px;
+}
+
+.usage-monitor-bar-percent {
+    font-weight: bold;
+}
+
+.usage-monitor-bar-percent-warn {
+    font-weight: bold;
+    color: #e01b24;
+}
+
+.usage-monitor-bar-track {
+    -usage-monitor-accent-color: #3584e4;
+    -usage-monitor-warn-color: #e01b24;
+    /* Semi-transparent black rather than the menu background: it notches the
+       bar visibly whether the fill underneath is accent blue or warning red. */
+    -usage-monitor-divider-color: rgba(0, 0, 0, 0.45);
+}
+
+/* GNOME 47 exposes the accent colour the user picked in Settings as the
+   `-st-accent-color` keyword, so the bars follow it like the rest of the
+   desktop. Shells older than 47 do not know the keyword and drop this one
+   declaration, leaving the Adwaita blue above - the cascade is doing the
+   version fallback, which is why this is a separate rule rather than an edit
+   to the block above. */
+.usage-monitor-bar-track {
+    -usage-monitor-accent-color: -st-accent-color;
+}
+
+.usage-monitor-bar-reset {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+/* Anthropic server status ----------------------------------------------- */
+
+.usage-monitor-status-row {
+    spacing: 8px;
+}
+
+.usage-monitor-dot-ok {
+    width: 8px;
+    height: 8px;
+    border-radius: 99px;
+    background-color: #2ec27e;
+}
+
+.usage-monitor-dot-warn {
+    width: 8px;
+    height: 8px;
+    border-radius: 99px;
+    background-color: #e5a50a;
+}
+
+.usage-monitor-status-button {
+    text-align: left;
+}
+
+.usage-monitor-status-button:hover {
+    text-decoration: underline;
+}
+
+.usage-monitor-incident {
+    font-size: 0.85em;
+    opacity: 0.7;
+}
+
+/* Footer ---------------------------------------------------------------- */
+
+.usage-monitor-footer {
+    spacing: 8px;
+    padding-top: 4px;
+}
+
+.usage-monitor-footer-text {
+    font-size: 0.85em;
+    opacity: 0.8;
+}
+
+.usage-monitor-footer-error {
+    font-size: 0.85em;
+    color: #e01b24;
+}
+
+.usage-monitor-version {
+    font-size: 0.85em;
+    opacity: 0.5;
+}

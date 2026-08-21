@@ -1,0 +1,107 @@
+# Maintainer: Carlos Ruiz <cailovirtual@gmail.com>
+#
+# Local build only - this package is not published to the AUR.
+# Build and install with:  ./install.sh
+#
+# The split keeps the desktop integration optional: a GNOME machine never
+# pulls in plasma-workspace, a Plasma machine never pulls in gnome-shell, and
+# the daemon alone is enough to run headless.
+#
+# That only holds when the packages are installed selectively. `makepkg -si`
+# installs every package a split PKGBUILD produces, so it would pull both
+# desktop shells onto any machine - install.sh detects the running desktop and
+# hands pacman just the two packages it needs. Detection deliberately lives
+# there and not here: package() runs on the build machine, and baking its
+# desktop into the artifact would make the package unreproducible.
+
+pkgbase=usage-monitor-for-claude
+pkgname=('usage-monitor-for-claude-daemon' 'usage-monitor-for-claude-plasma' 'usage-monitor-for-claude-gnome')
+pkgver=1.20.0
+pkgrel=1
+pkgdesc='Claude usage quotas in the system tray'
+arch=('any')
+url='https://github.com/cailo/usage-monitor-for-claude'
+license=('MIT')
+# The runtime Python dependencies are build-time too: check() runs the test suite.
+# plasma-workspace is deliberately left out - nothing in build() or check() needs
+# it, and requiring it would pull a full desktop onto a build machine.
+makedepends=('imagemagick' 'python' 'python-requests' 'python-dbus' 'python-gobject')
+
+# Built straight from the working tree rather than from a git or tarball
+# source: this package is never published, and building the checkout is what
+# makes it usable before the branch is pushed anywhere.
+_repodir="$(realpath "$startdir/../..")"
+
+pkgver() {
+    cd "$_repodir"
+    PYTHONPATH="$_repodir" python -c 'import usage_monitor_for_claude; print(usage_monitor_for_claude.__version__)'
+}
+
+build() {
+    cd "$_repodir"
+    # The tray icon ships as a multi-size .ico; extract the largest frame for
+    # the hicolor theme so notifications and the launcher have a real icon.
+    magick usage_monitor_for_claude.ico -resize 256x256 -flatten png32:"$srcdir/usage-monitor-for-claude.png"
+}
+
+check() {
+    cd "$_repodir"
+    python -m unittest discover -s tests
+}
+
+package_usage-monitor-for-claude-daemon() {
+    pkgdesc='Usage Monitor for Claude - polling daemon and D-Bus service'
+    depends=('python' 'python-requests' 'python-dbus' 'python-gobject')
+    optdepends=('usage-monitor-for-claude-plasma: KDE Plasma panel widget'
+                'usage-monitor-for-claude-gnome: GNOME Shell panel indicator')
+
+    cd "$_repodir"
+    local appdir="$pkgdir/usr/share/$pkgbase"
+
+    install -d "$appdir"
+    cp -r usage_monitor_for_claude usage_monitor_linux locale "$appdir/"
+    # The Windows shell has no place in a Linux package and would only widen
+    # the audit surface; the daemon never imports it.
+    rm -f "$appdir/usage_monitor_for_claude"/{app,popup,tray_icon,autostart,single_instance,notification_identity,verbose,idle,__main__}.py
+    rm -rf "$appdir/usage_monitor_for_claude/popup"
+    find "$appdir" -type d -name __pycache__ -exec rm -rf {} +
+
+    install -Dm755 packaging/linux/usage-monitor-for-claude-daemon "$pkgdir/usr/bin/usage-monitor-for-claude-daemon"
+    install -Dm755 packaging/linux/usage-monitor-for-claude-client "$pkgdir/usr/bin/usage-monitor-for-claude-client"
+    install -Dm644 packaging/linux/usage-monitor-for-claude.service "$pkgdir/usr/lib/systemd/user/usage-monitor-for-claude.service"
+    # Autostart template the user copies into ~/.config/autostart/.  It is not
+    # installed into /etc/xdg/autostart, which would start the daemon for every
+    # user on the machine without asking.
+    install -Dm644 packaging/linux/usage-monitor-for-claude-autostart.desktop \
+        "$pkgdir/usr/share/$pkgbase/autostart/usage-monitor-for-claude.desktop"
+    install -Dm644 packaging/linux/usage-monitor-for-claude.desktop "$pkgdir/usr/share/applications/usage-monitor-for-claude.desktop"
+    install -Dm644 "$srcdir/usage-monitor-for-claude.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/usage-monitor-for-claude.png"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+package_usage-monitor-for-claude-plasma() {
+    pkgdesc='Usage Monitor for Claude - KDE Plasma panel widget'
+    depends=('usage-monitor-for-claude-daemon' 'plasma-workspace')
+
+    cd "$_repodir"
+    local appletdir="$pkgdir/usr/share/plasma/plasmoids/org.kde.usagemonitorforclaude"
+
+    install -d "$appletdir"
+    cp -r frontends/plasma/metadata.json frontends/plasma/contents "$appletdir/"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+package_usage-monitor-for-claude-gnome() {
+    pkgdesc='Usage Monitor for Claude - GNOME Shell panel indicator'
+    depends=('usage-monitor-for-claude-daemon' 'gnome-shell')
+
+    cd "$_repodir"
+    # GNOME Shell resolves an extension by its uuid: the directory name has to
+    # be the uuid from metadata.json or the shell never loads it.
+    local uuid='usage-monitor-for-claude@cailo.github.com'
+    local extensiondir="$pkgdir/usr/share/gnome-shell/extensions/$uuid"
+
+    install -d "$extensiondir"
+    install -m644 frontends/gnome/*.js frontends/gnome/metadata.json frontends/gnome/stylesheet.css "$extensiondir/"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
