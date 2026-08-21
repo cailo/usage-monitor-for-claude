@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - With uncapped extra usage enabled, an exhausted quota now shows the "extra usage active" tray indicator instead of the exhausted glyph - work continues on paid overage, so the icon no longer suggests Claude has stopped (thanks to [@joeklittle](https://github.com/joeklittle) for the contribution)
 - The startup and double-click event commands no longer report `USAGE_MONITOR_EXTRA_LIMIT` as a zero amount for uncapped extra usage - the variable is now omitted when there is no monthly limit (thanks to [@joeklittle](https://github.com/joeklittle) for the contribution)
+- On systems with a non-UTF-8 code page (Traditional Chinese, Japanese, Korean and others), the tray icon no longer stops updating after an automatic token renewal - the Claude CLI's output is now read as UTF-8 instead of with the system code page, which crashed the update loop as soon as the CLI printed a non-ASCII character (thanks to [@daweiliutw-ctrl](https://github.com/daweiliutw-ctrl) for reporting [#80](https://github.com/jens-duttke/usage-monitor-for-claude/issues/80))
 - After an account switch, the tray icon and popup now show the new account's usage right away - previously, when the switch happened while a usage request was already running, the "account switched" notification appeared next to the previous account's numbers, which stayed on screen until the next scheduled poll
 
 [Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.20.0...HEAD)

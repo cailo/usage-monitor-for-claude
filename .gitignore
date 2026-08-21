@@ -14,6 +14,11 @@ env/
 build/
 dist/
 
+# makepkg build artifacts (packaging/arch/install.sh regenerates them)
+packaging/arch/pkg/
+packaging/arch/src/
+packaging/arch/*.pkg.tar.zst
+
 # IDE
 .vscode/
 .idea/
