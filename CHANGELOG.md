@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+[Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.21.0...HEAD)
+
+## [1.21.0] - 2026-08-21
+
 ### Added
 
 - Extra usage without a monthly limit (uncapped pay-as-you-go overage, the usual state for Team and Enterprise plans) now appears in the popup as the amount spent - previously the Extra Usage section stayed hidden unless a monthly limit was configured, silently hiding real spending (thanks to [@joeklittle](https://github.com/joeklittle) for the contribution)
@@ -20,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On systems with a non-UTF-8 code page (Traditional Chinese, Japanese, Korean and others), the tray icon no longer stops updating after an automatic token renewal - the Claude CLI's output is now read as UTF-8 instead of with the system code page, which crashed the update loop as soon as the CLI printed a non-ASCII character (thanks to [@daweiliutw-ctrl](https://github.com/daweiliutw-ctrl) for reporting [#80](https://github.com/jens-duttke/usage-monitor-for-claude/issues/80))
 - After an account switch, the tray icon and popup now show the new account's usage right away - previously, when the switch happened while a usage request was already running, the "account switched" notification appeared next to the previous account's numbers, which stayed on screen until the next scheduled poll
 
-[Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.20.0...HEAD)
+[Show all code changes](https://github.com/jens-duttke/usage-monitor-for-claude/compare/v1.20.0...v1.21.0)
 
 ## [1.20.0] - 2026-07-17
 
